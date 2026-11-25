@@ -265,6 +265,24 @@ button, input, select, textarea {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 0.8rem 1rem;
+  display: block;
+}
+.kpi-link {
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.15s ease, transform 0.12s ease, box-shadow 0.15s ease;
+  cursor: pointer;
+}
+.kpi-link:hover {
+  border-color: var(--accent);
+  box-shadow: var(--shadow);
+  transform: translateY(-1px);
+  text-decoration: none;
+}
+.kpi-link .kpi-label::after {
+  content: ' →';
+  color: var(--accent);
+  opacity: 0.8;
 }
 .kpi-value {
   font-family: var(--font-serif);
@@ -299,6 +317,7 @@ button, input, select, textarea {
 .badge-owned { background: var(--ok-soft); color: var(--ok); }
 .badge-wishlist { background: var(--warn-soft); color: var(--warn); }
 .badge-deal { background: var(--ok); color: #fff; }
+.badge-warn { background: var(--warn-soft); color: var(--warn); }
 .badge-drop { background: var(--ok-soft); color: var(--ok); }
 .badge-rise { background: var(--danger-soft); color: var(--danger); }
 

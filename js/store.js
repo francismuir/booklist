@@ -5,6 +5,8 @@ const LS_DATA_KEY = 'booklist_library_v1';
 const LS_META_KEY = 'booklist_meta_v1';
 const LS_GH_KEY = 'booklist_github_cfg_v1';
 const LS_THEME_KEY = 'booklist_theme_v1';
+export const DEFAULT_AMAZON_WISHLIST_URL =
+  'https://www.amazon.co.uk/hz/wishlist/ls/12LA6VRK0EH8U?type=wishlist&filter=unpurchased&sort=price-asc&viewType=list';
 
 class LibraryStore extends EventTarget {
   constructor() {
@@ -238,6 +240,70 @@ class LibraryStore extends EventTarget {
     this.data.series.push(created);
     this.data.series.sort((a, b) => a.name.localeCompare(b.name));
     return created;
+  }
+
+  createSeries({ name, parentSeriesId = null, authorDefault = null }) {
+    const clean = String(name || '').trim();
+    if (!clean) throw new Error('Series name is required.');
+    const existing = this.data.series.find((s) => s.name.toLowerCase() === clean.toLowerCase());
+    if (existing) throw new Error(`Series "${existing.name}" already exists.`);
+    const created = {
+      id: `ser_${slugify(clean)}_${Math.random().toString(36).slice(2, 5)}`,
+      name: clean,
+      parent_series_id: parentSeriesId || null,
+      author_default: authorDefault ? String(authorDefault).trim() : null,
+    };
+    this.data.series.push(created);
+    this.data.series.sort((a, b) => a.name.localeCompare(b.name));
+    this.persistLocal(true);
+    return created;
+  }
+
+  attachBooksToSeries(seriesId, assignments) {
+    if (!seriesId || !Array.isArray(assignments)) return 0;
+    let count = 0;
+    for (const { bookId, seriesOrder } of assignments) {
+      const b = this.getBook(bookId);
+      if (!b) continue;
+      b.series_id = seriesId;
+      b.series_order = seriesOrder ?? null;
+      count += 1;
+    }
+    if (count > 0) this.persistLocal(true);
+    return count;
+  }
+
+  getAmazonWishlistUrl() {
+    return this.data.meta?.amazon_wishlist_url || DEFAULT_AMAZON_WISHLIST_URL;
+  }
+
+  setAmazonWishlistUrl(url) {
+    const clean = String(url || '').trim();
+    this.data.meta = {
+      ...(this.data.meta || {}),
+      amazon_wishlist_url: clean || DEFAULT_AMAZON_WISHLIST_URL,
+    };
+    this.persistLocal(true);
+  }
+
+  bulkSetTargetPrice(price, { scope = 'wishlist_library', onlyBlank = false } = {}) {
+    const targetVal =
+      price === null || price === undefined || price === ''
+        ? null
+        : Math.round(Number(price) * 100) / 100;
+    if (targetVal !== null && (Number.isNaN(targetVal) || targetVal < 0)) {
+      throw new Error('Target price must be 0 or greater.');
+    }
+    let count = 0;
+    for (const b of this.data.books) {
+      if (scope === 'wishlist_library' && !(b.ownership === 'not_owned' && b.list_scope === 'library')) continue;
+      if (scope === 'wishlist_all' && b.ownership !== 'not_owned') continue;
+      if (onlyBlank && targetVal !== null && b.target_price !== null && b.target_price !== undefined) continue;
+      b.target_price = targetVal;
+      count += 1;
+    }
+    if (count > 0) this.persistLocal(true);
+    return count;
   }
 
   saveBook(payload, existingId = null) {

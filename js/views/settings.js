@@ -76,6 +76,14 @@ export function renderSettings(container, ctx) {
       </section>
     </div>
 
+    <section class="card" style="margin-bottom:1.1rem">
+      <h2 class="card-title">Amazon UK Wishlist URL</h2>
+      <form id="amz-wishlist-url-form" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
+        <input id="amz-wishlist-url" class="input" style="flex:1 1 340px" type="url" value="${esc(store.getAmazonWishlistUrl())}" />
+        <button class="btn btn-primary btn-sm" type="submit">Save Wishlist URL</button>
+      </form>
+    </section>
+
     <section class="card">
       <h2 class="card-title">Local Import, Export &amp; Theme</h2>
       <div style="display:flex;flex-wrap:wrap;gap:0.6rem;align-items:center">
@@ -166,5 +174,12 @@ export function renderSettings(container, ctx) {
     if (!window.confirm('Clear browser-cached library edits and reload from source?')) return;
     await store.resetToLocalOrDemo();
     ctx.toast('Browser cache reset', 'ok');
+  });
+
+  container.querySelector('#amz-wishlist-url-form')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const url = container.querySelector('#amz-wishlist-url').value.trim();
+    store.setAmazonWishlistUrl(url);
+    ctx.toast('Saved Amazon wishlist URL', 'ok');
   });
 }

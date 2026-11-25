@@ -1,7 +1,7 @@
 import { store } from '../store.js';
 import { amazonUrl, authorSurname, debounce, esc, formatDate, formatPrice, normText, statusLabel } from '../utils.js';
 
-const filterState = {
+const DEFAULT_FILTERS = {
   q: '',
   status: 'all',
   ownership: 'all',
@@ -9,19 +9,29 @@ const filterState = {
   seriesId: 'all',
   category: 'all',
   recommender: 'all',
+  readYear: 'all',
   includeBacklog: false,
   sortBy: 'author',
   sortDir: 'asc',
   limit: 150,
 };
 
+const filterState = { ...DEFAULT_FILTERS };
+
 export function applyBooksRouteParams(params) {
-  if (!params) return;
+  if (!params || !Object.keys(params).length) return;
+  Object.assign(filterState, {
+    ...DEFAULT_FILTERS,
+    sortBy: filterState.sortBy,
+    sortDir: filterState.sortDir,
+  });
   if (params.status) filterState.status = params.status;
   if (params.ownership) filterState.ownership = params.ownership;
+  if (params.type) filterState.type = params.type;
   if (params.q !== undefined) filterState.q = params.q;
   if (params.seriesId) filterState.seriesId = params.seriesId;
   if (params.recommender) filterState.recommender = params.recommender;
+  if (params.readYear) filterState.readYear = params.readYear;
 }
 
 function getSeriesAndDescendantIds(seriesId, seriesList) {
@@ -43,6 +53,13 @@ export function renderBooks(container, ctx) {
   const categories = [...new Set(allBooks.map((b) => b.category).filter(Boolean))].sort((a, b) =>
     a.localeCompare(b)
   );
+  const readYears = [
+    ...new Set(
+      allBooks
+        .map((b) => String(b.date_read || '').slice(0, 4))
+        .filter((y) => /^\d{4}$/.test(y))
+    ),
+  ].sort((a, b) => b.localeCompare(a));
 
   const seriesFilterSet =
     filterState.seriesId !== 'all' ? getSeriesAndDescendantIds(filterState.seriesId, seriesList) : null;
@@ -58,6 +75,7 @@ export function renderBooks(container, ctx) {
     if (seriesFilterSet && !seriesFilterSet.has(b.series_id)) return false;
     if (filterState.category !== 'all' && b.category !== filterState.category) return false;
     if (filterState.recommender !== 'all' && b.recommended_by !== filterState.recommender) return false;
+    if (filterState.readYear !== 'all' && !String(b.date_read || '').startsWith(filterState.readYear)) return false;
     if (qNorm) {
       const sName = b.series_id ? seriesMap.get(b.series_id)?.name || '' : '';
       const hay = normText(`${b.author} ${b.title} ${sName} ${b.notes || ''} ${b.recommended_by || ''}`);
@@ -104,7 +122,7 @@ export function renderBooks(container, ctx) {
 
   const visible = filtered.slice(0, filterState.limit);
 
-  container.innerHTML = `
+  container.innerHTML = `<div class="view-root">
     <div class="page-header">
       <div>
         <h1 class="page-title">Book List</h1>
@@ -165,6 +183,11 @@ export function renderBooks(container, ctx) {
         <select id="filter-recommender" class="select">
           <option value="all">All Recommenders</option>
           ${recommenders.map((r) => `<option value="${esc(r)}" ${filterState.recommender === r ? 'selected' : ''}>Rec: ${esc(r)}</option>`).join('')}
+        </select>
+
+        <select id="filter-readyear" class="select">
+          <option value="all">Read Year: All</option>
+          ${readYears.map((y) => `<option value="${esc(y)}" ${filterState.readYear === y ? 'selected' : ''}>Read: ${esc(y)}</option>`).join('')}
         </select>
 
         <select id="sort-by" class="select">
@@ -244,9 +267,11 @@ export function renderBooks(container, ctx) {
           </div>`
         : ''
     }
-  `;
+  </div>`;
 
-  const searchInput = container.querySelector('#books-search');
+  const root = container.firstElementChild;
+
+  const searchInput = root.querySelector('#books-search');
   searchInput?.addEventListener(
     'input',
     debounce((e) => {
@@ -261,7 +286,7 @@ export function renderBooks(container, ctx) {
     }, 180)
   );
 
-  container.querySelector('#status-chips')?.addEventListener('click', (e) => {
+  root.querySelector('#status-chips')?.addEventListener('click', (e) => {
     const chip = e.target.closest('[data-status]');
     if (!chip) return;
     filterState.status = chip.dataset.status;
@@ -270,7 +295,7 @@ export function renderBooks(container, ctx) {
   });
 
   const bindSelect = (id, key) => {
-    container.querySelector(id)?.addEventListener('change', (e) => {
+    root.querySelector(id)?.addEventListener('change', (e) => {
       filterState[key] = e.target.value;
       filterState.limit = 150;
       renderBooks(container, ctx);
@@ -281,41 +306,33 @@ export function renderBooks(container, ctx) {
   bindSelect('#filter-series', 'seriesId');
   bindSelect('#filter-category', 'category');
   bindSelect('#filter-recommender', 'recommender');
+  bindSelect('#filter-readyear', 'readYear');
   bindSelect('#sort-by', 'sortBy');
 
-  container.querySelector('#sort-dir')?.addEventListener('click', () => {
+  root.querySelector('#sort-dir')?.addEventListener('click', () => {
     filterState.sortDir = filterState.sortDir === 'asc' ? 'desc' : 'asc';
     renderBooks(container, ctx);
   });
 
-  container.querySelector('#filter-backlog')?.addEventListener('change', (e) => {
+  root.querySelector('#filter-backlog')?.addEventListener('change', (e) => {
     filterState.includeBacklog = e.target.checked;
     renderBooks(container, ctx);
   });
 
-  container.querySelector('#btn-reset-filters')?.addEventListener('click', () => {
-    Object.assign(filterState, {
-      q: '',
-      status: 'all',
-      ownership: 'all',
-      type: 'all',
-      seriesId: 'all',
-      category: 'all',
-      recommender: 'all',
-      includeBacklog: false,
-      sortBy: 'author',
-      sortDir: 'asc',
-      limit: 150,
-    });
+  root.querySelector('#btn-reset-filters')?.addEventListener('click', () => {
+    Object.assign(filterState, DEFAULT_FILTERS);
+    if (window.location.hash.includes('?')) {
+      window.history.replaceState(null, '', '#/books');
+    }
     renderBooks(container, ctx);
   });
 
-  container.querySelector('#btn-show-more')?.addEventListener('click', () => {
+  root.querySelector('#btn-show-more')?.addEventListener('click', () => {
     filterState.limit += 200;
     renderBooks(container, ctx);
   });
 
-  container.addEventListener('click', (e) => {
+  root.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
     const { action, id } = btn.dataset;

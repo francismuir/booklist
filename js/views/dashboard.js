@@ -1,6 +1,6 @@
 import { getReadingBalance, pickRandomBook } from '../randomizer.js';
 import { store } from '../store.js';
-import { amazonUrl, esc, formatDate, formatPrice, sourceLabel } from '../utils.js';
+import { amazonUrl, esc, formatPrice, sourceLabel } from '../utils.js';
 
 let pickerState = {
   type: null, // null = auto-nudge
@@ -13,7 +13,7 @@ let pickerState = {
   lastPoolSize: 0,
 };
 
-function renderReadingCard(book, seriesMap, ctx) {
+function renderReadingCard(book, seriesMap) {
   const sObj = book.series_id ? seriesMap.get(book.series_id) : null;
   const amz = amazonUrl(book);
   return `
@@ -52,8 +52,12 @@ export function renderDashboard(container, ctx) {
   }
 
   const thisYear = String(new Date().getFullYear());
-  const readThisYear = books.filter((b) => b.status === 'read' && String(b.date_read || '').startsWith(thisYear)).length;
-  const ownedTbr = books.filter((b) => b.ownership === 'owned' && (b.status === 'unread' || b.status === 'up_next')).length;
+  const readThisYear = books.filter(
+    (b) => b.status === 'read' && b.list_scope === 'library' && String(b.date_read || '').startsWith(thisYear)
+  ).length;
+  const ownedTbr = books.filter(
+    (b) => b.ownership === 'owned' && b.status === 'unread' && b.list_scope === 'library'
+  ).length;
   const wishlistCount = books.filter((b) => b.ownership === 'not_owned' && b.list_scope === 'library').length;
   const upNextBooks = books.filter((b) => b.status === 'up_next');
 
@@ -68,35 +72,31 @@ export function renderDashboard(container, ctx) {
     balanceMsg = 'You have no Fiction book on the go right now — picker is nudged to Fiction.';
   }
 
-  container.innerHTML = `
+  container.innerHTML = `<div class="view-root">
     <div class="page-header">
       <div>
         <h1 class="page-title">On the Go</h1>
         <p class="page-subtitle">${esc(balanceMsg)}</p>
       </div>
-      <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
-        <a class="btn btn-sm" href="#/books?status=unread&ownership=owned">Browse Owned TBR (${ownedTbr})</a>
-        <a class="btn btn-sm" href="#/wishlist">Wishlist (${wishlistCount})</a>
-      </div>
     </div>
 
     <div class="grid-4" style="margin-bottom:1rem">
-      <div class="kpi-card">
+      <a class="kpi-card kpi-link" href="#/books?status=reading">
         <div class="kpi-value">${balance.reading.length}</div>
         <div class="kpi-label">Currently Reading (${factualReading.length} Factual · ${fictionReading.length} Fiction)</div>
-      </div>
-      <div class="kpi-card">
+      </a>
+      <a class="kpi-card kpi-link" href="#/books?status=unread&ownership=owned">
         <div class="kpi-value">${ownedTbr}</div>
         <div class="kpi-label">Owned &amp; Unread (TBR)</div>
-      </div>
-      <div class="kpi-card">
+      </a>
+      <a class="kpi-card kpi-link" href="#/books?status=read&readYear=${thisYear}">
         <div class="kpi-value">${readThisYear}</div>
         <div class="kpi-label">Read in ${thisYear}</div>
-      </div>
-      <div class="kpi-card">
+      </a>
+      <a class="kpi-card kpi-link" href="#/books?ownership=not_owned">
         <div class="kpi-value">${wishlistCount}</div>
         <div class="kpi-label">Library Wishlist</div>
-      </div>
+      </a>
     </div>
 
     <div class="grid-2" style="margin-bottom:1.1rem">
@@ -108,7 +108,7 @@ export function renderDashboard(container, ctx) {
         <div class="reading-list">
           ${
             fictionReading.length
-              ? fictionReading.map((b) => renderReadingCard(b, seriesMap, ctx)).join('')
+              ? fictionReading.map((b) => renderReadingCard(b, seriesMap)).join('')
               : `<div class="muted" style="padding:0.75rem 0">No fiction book currently reading. Use the random picker to pick one!</div>`
           }
         </div>
@@ -122,7 +122,7 @@ export function renderDashboard(container, ctx) {
         <div class="reading-list">
           ${
             factualReading.length
-              ? factualReading.map((b) => renderReadingCard(b, seriesMap, ctx)).join('')
+              ? factualReading.map((b) => renderReadingCard(b, seriesMap)).join('')
               : `<div class="muted" style="padding:0.75rem 0">No factual book currently reading. Use the random picker to pick one!</div>`
           }
         </div>
@@ -229,7 +229,9 @@ export function renderDashboard(container, ctx) {
           : `<div class="muted" style="font-size:0.9rem">No books marked "Up Next" yet. Roll the random picker or mark books in your Book List to queue them here.</div>`
       }
     </section>
-  `;
+  </div>`;
+
+  const root = container.firstElementChild;
 
   function runRoll(resetExcludes = false) {
     if (resetExcludes) pickerState.excludeIds.clear();
@@ -257,28 +259,28 @@ export function renderDashboard(container, ctx) {
     renderDashboard(container, ctx);
   }
 
-  container.querySelector('#pick-type')?.addEventListener('change', (e) => {
+  root.querySelector('#pick-type')?.addEventListener('change', (e) => {
     pickerState.type = e.target.value;
     pickerState.excludeIds.clear();
   });
-  container.querySelector('#pick-ownership')?.addEventListener('change', (e) => {
+  root.querySelector('#pick-ownership')?.addEventListener('change', (e) => {
     pickerState.ownership = e.target.value;
     pickerState.excludeIds.clear();
   });
-  container.querySelector('#pick-series-guard')?.addEventListener('change', (e) => {
+  root.querySelector('#pick-series-guard')?.addEventListener('change', (e) => {
     pickerState.seriesOrderGuard = e.target.checked;
   });
-  container.querySelector('#pick-upnext-boost')?.addEventListener('change', (e) => {
+  root.querySelector('#pick-upnext-boost')?.addEventListener('change', (e) => {
     pickerState.preferUpNext = e.target.checked;
   });
-  container.querySelector('#pick-include-backlog')?.addEventListener('change', (e) => {
+  root.querySelector('#pick-include-backlog')?.addEventListener('change', (e) => {
     pickerState.includeBacklog = e.target.checked;
   });
 
-  container.querySelector('#btn-roll-book')?.addEventListener('click', () => runRoll(false));
-  container.querySelector('#btn-pick-reroll')?.addEventListener('click', () => runRoll(false));
+  root.querySelector('#btn-roll-book')?.addEventListener('click', () => runRoll(false));
+  root.querySelector('#btn-pick-reroll')?.addEventListener('click', () => runRoll(false));
 
-  container.querySelector('#btn-pick-start')?.addEventListener('click', (e) => {
+  root.querySelector('#btn-pick-start')?.addEventListener('click', (e) => {
     const id = e.currentTarget.dataset.id;
     store.startReading(id);
     pickerState.lastPickId = null;
@@ -286,13 +288,13 @@ export function renderDashboard(container, ctx) {
     ctx.toast('Marked as currently reading', 'ok');
   });
 
-  container.querySelector('#btn-pick-upnext')?.addEventListener('click', (e) => {
+  root.querySelector('#btn-pick-upnext')?.addEventListener('click', (e) => {
     const id = e.currentTarget.dataset.id;
     store.saveBook({ status: 'up_next', list_scope: 'library' }, id);
     ctx.toast('Added to Up Next queue', 'ok');
   });
 
-  container.addEventListener('click', (e) => {
+  root.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
     const { action, id } = btn.dataset;

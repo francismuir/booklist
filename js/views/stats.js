@@ -99,7 +99,7 @@ export function renderStats(container, ctx) {
   }
   const topAuthors = [...authMap.values()].sort((a, b) => b.read - a.read || b.total - a.total).slice(0, 18);
 
-  container.innerHTML = `
+  container.innerHTML = `<div class="view-root">
     <div class="page-header">
       <div>
         <h1 class="page-title">Reading Analytics &amp; Maintenance</h1>
@@ -246,9 +246,11 @@ export function renderStats(container, ctx) {
         }
       </div>
     </section>
-  `;
+  </div>`;
 
-  container.addEventListener('click', async (e) => {
+  const root = container.firstElementChild;
+
+  root.addEventListener('click', async (e) => {
     const editEl = e.target.closest('[data-edit-book]');
     if (editEl) {
       e.preventDefault();
@@ -274,7 +276,7 @@ export function renderStats(container, ctx) {
     }
   });
 
-  container.querySelector('#btn-batch-pubyear')?.addEventListener('click', async (e) => {
+  root.querySelector('#btn-batch-pubyear')?.addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     btn.disabled = true;
     const targets = missingPubYear.slice(0, 15);

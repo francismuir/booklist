@@ -1,3 +1,4 @@
+import { compareAmazonWishlist, getWishlistBookmarkletCode, parseAmazonWishlistInput } from '../amazonWishlist.js';
 import { exportPriceCheckCsv, parsePriceCheckCsv } from '../csv.js';
 import { store } from '../store.js';
 import { amazonDisplayId, amazonUrl, downloadTextFile, esc, formatDate, formatPrice, todayIso } from '../utils.js';
@@ -5,6 +6,11 @@ import { amazonDisplayId, amazonUrl, downloadTextFile, esc, formatDate, formatPr
 let csvScope = 'wishlist_library'; // 'wishlist_library' | 'wishlist_all' | 'all_books'
 let wishlistSort = 'price_asc'; // 'price_asc' | 'price_desc' | 'title' | 'checked'
 let pendingPreview = null; // { items, fileName }
+let amazonCompareOpen = false;
+let amazonRawInput = '';
+let amazonComparison = null;
+let bulkTargetScope = 'wishlist_blank'; // 'wishlist_blank' | 'wishlist_all_overwrite' | 'unbought_all' | 'all_books'
+let bulkTargetValue = '';
 
 function getScopeBooks(books, scope) {
   if (scope === 'wishlist_library') {
@@ -19,6 +25,7 @@ function getScopeBooks(books, scope) {
 export function renderWishlist(container, ctx) {
   const allBooks = store.data.books;
   const seriesMap = store.getSeriesMap();
+  const amazonWishlistUrl = store.getAmazonWishlistUrl();
   const wishlist = allBooks.filter((b) => b.ownership === 'not_owned' && b.list_scope === 'library');
   const backlogWishlist = allBooks.filter((b) => b.ownership === 'not_owned' && b.list_scope === 'series_backlog');
   const deals = wishlist.filter(
@@ -33,8 +40,9 @@ export function renderWishlist(container, ctx) {
   });
 
   const exportCount = getScopeBooks(allBooks, csvScope).length;
+  const bookmarkletHref = getWishlistBookmarkletCode();
 
-  container.innerHTML = `
+  container.innerHTML = `<div class="view-root">
     <div class="page-header">
       <div>
         <h1 class="page-title">Wishlist &amp; Price Check</h1>
@@ -42,6 +50,10 @@ export function renderWishlist(container, ctx) {
           ${wishlist.length} books in main wishlist (${backlogWishlist.length} more in series backlog) ·
           ${deals.length} at or below target price
         </p>
+      </div>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+        <a class="btn btn-primary btn-sm" href="${esc(amazonWishlistUrl)}" target="_blank" rel="noopener">Open Amazon UK Wishlist ↗</a>
+        <a class="btn btn-sm" href="#/settings">Edit Link</a>
       </div>
     </div>
 
@@ -151,6 +163,149 @@ export function renderWishlist(container, ctx) {
       }
     </section>
 
+    <details class="card" id="amazon-compare-details" style="margin-bottom:1.1rem" ${amazonCompareOpen ? 'open' : ''}>
+      <summary style="cursor:pointer;font-family:var(--font-serif);font-size:1.15rem;font-weight:700">
+        Compare with Amazon Wishlist
+        <span class="muted" style="font-family:var(--font-sans);font-size:0.84rem;font-weight:400;margin-left:0.5rem">
+          Find books missing from Amazon or missing from this app
+        </span>
+      </summary>
+
+      <div style="margin-top:0.85rem">
+        <div class="grid-2" style="margin-bottom:0.75rem">
+          <div style="padding:0.7rem;border:1px solid var(--border);border-radius:8px;background:var(--bg)">
+            <div style="font-weight:600;font-size:0.9rem;margin-bottom:0.3rem">Option A — 1-Click Bookmarklet (Easiest)</div>
+            <div class="muted" style="font-size:0.84rem;margin-bottom:0.45rem">
+              Drag this button to your bookmarks bar. Open your <a href="${esc(amazonWishlistUrl)}" target="_blank" rel="noopener">Amazon UK Wishlist</a>, scroll down so all items load, click the bookmarklet, then paste below.
+            </div>
+            <a class="btn btn-sm" href="${bookmarkletHref}" onclick="event.preventDefault()">📋 Copy Amazon Wishlist</a>
+            <span class="muted" style="font-size:0.78rem;margin-left:0.35rem">(drag to bookmarks bar)</span>
+          </div>
+
+          <div style="padding:0.7rem;border:1px solid var(--border);border-radius:8px;background:var(--bg)">
+            <div style="font-weight:600;font-size:0.9rem;margin-bottom:0.3rem">Option B — Saved Amazon HTML File</div>
+            <div class="muted" style="font-size:0.84rem;margin-bottom:0.45rem">
+              On your Amazon wishlist page, press <code>Cmd+S</code> (<em>Webpage, HTML Only</em>) and drop that <code>.html</code> file here:
+            </div>
+            <label class="btn btn-sm" style="cursor:pointer">
+              ⬆ Choose Saved Wishlist HTML
+              <input id="amz-html-input" type="file" accept=".html,.htm,.txt,.json" class="hidden" />
+            </label>
+          </div>
+        </div>
+
+        <textarea id="amz-compare-text" class="textarea mono" style="width:100%;font-size:0.82rem" rows="3" placeholder="Paste bookmarklet JSON, Amazon URLs, or ASINs here…">${esc(amazonRawInput)}</textarea>
+        <div style="display:flex;gap:0.5rem;margin-top:0.5rem;align-items:center;flex-wrap:wrap">
+          <button id="btn-run-amz-compare" class="btn btn-primary btn-sm" type="button">Compare Lists</button>
+          ${amazonComparison ? `<button id="btn-clear-amz-compare" class="btn btn-sm" type="button">Clear Comparison</button>` : ''}
+        </div>
+
+        ${
+          amazonComparison
+            ? (() => {
+                const c = amazonComparison;
+                return `
+                  <div style="margin-top:0.95rem;padding-top:0.85rem;border-top:1px solid var(--border)">
+                    <div style="display:flex;gap:0.6rem;flex-wrap:wrap;margin-bottom:0.85rem">
+                      <span class="badge badge-owned">${c.matched.length} matched</span>
+                      <span class="badge badge-warn">${c.missingFromAmazon.length} missing from Amazon</span>
+                      <span class="badge badge-factual">${c.missingFromApp.length} missing from App wishlist</span>
+                      ${c.priceChanges.length ? `<span class="badge badge-drop">${c.priceChanges.length} price changes detected</span>` : ''}
+                    </div>
+
+                    ${
+                      c.priceChanges.length
+                        ? `<div style="margin-bottom:0.9rem;padding:0.65rem 0.85rem;border:1px solid var(--border);border-radius:8px;background:var(--ok-soft)">
+                            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem">
+                              <strong>${c.priceChanges.length} matched book${c.priceChanges.length === 1 ? '' : 's'} have updated Amazon prices</strong>
+                              <button id="btn-apply-amz-prices" class="btn btn-ok btn-xs" type="button">Apply ${c.priceChanges.length} Price Updates</button>
+                            </div>
+                          </div>`
+                        : ''
+                    }
+
+                    <div class="grid-2">
+                      <div>
+                        <h3 style="margin:0 0 0.4rem;font-size:0.98rem">In App Wishlist, Missing from Amazon (${c.missingFromAmazon.length})</h3>
+                        <div class="table-wrap" style="max-height:280px;overflow-y:auto">
+                          <table>
+                            <thead><tr><th>Title</th><th>Author</th><th>Actions</th></tr></thead>
+                            <tbody>
+                              ${
+                                c.missingFromAmazon.length
+                                  ? c.missingFromAmazon
+                                      .map((b) => {
+                                        const amz = amazonUrl(b);
+                                        return `<tr>
+                                          <td><strong>${esc(b.title)}</strong><div class="muted mono" style="font-size:0.75rem">${esc(amazonDisplayId(b) || 'No ASIN')}</div></td>
+                                          <td>${esc(b.author)}</td>
+                                          <td style="white-space:nowrap">
+                                            ${amz ? `<a class="btn btn-xs" href="${esc(amz)}" target="_blank" rel="noopener">Open ↗</a>` : ''}
+                                            <button class="btn btn-ok btn-xs" data-action="bought" data-id="${esc(b.id)}">Bought</button>
+                                          </td>
+                                        </tr>`;
+                                      })
+                                      .join('')
+                                  : `<tr><td colspan="3" class="muted">All app wishlist books are on Amazon!</td></tr>`
+                              }
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      <div>
+                        <h3 style="margin:0 0 0.4rem;font-size:0.98rem">On Amazon Wishlist, Not in App Wishlist (${c.missingFromApp.length})</h3>
+                        <div class="table-wrap" style="max-height:280px;overflow-y:auto">
+                          <table>
+                            <thead><tr><th>Book</th><th class="num">Price</th><th>Actions</th></tr></thead>
+                            <tbody>
+                              ${
+                                c.missingFromApp.length
+                                  ? c.missingFromApp
+                                      .map((m, idx) => {
+                                        const it = m.amazonItem;
+                                        const ex = m.existingBook;
+                                        const note = ex
+                                          ? ex.ownership === 'owned'
+                                            ? `<span class="badge badge-owned">Already Owned in App</span>`
+                                            : ex.list_scope === 'series_backlog'
+                                              ? `<span class="badge badge-unread">In Series Backlog</span>`
+                                              : ''
+                                          : '';
+                                        return `<tr>
+                                          <td>
+                                            <strong>${esc(it.title || it.asin)}</strong>
+                                            ${it.author ? `<div class="muted" style="font-size:0.78rem">${esc(it.author)}</div>` : ''}
+                                            <div class="muted mono" style="font-size:0.74rem">${esc(it.asin || '')} ${note}</div>
+                                          </td>
+                                          <td class="num">${formatPrice(it.price)}</td>
+                                          <td style="white-space:nowrap">
+                                            ${
+                                              ex && ex.list_scope === 'series_backlog'
+                                                ? `<button class="btn btn-xs" data-promote-id="${esc(ex.id)}">Promote</button>`
+                                                : !ex
+                                                  ? `<button class="btn btn-primary btn-xs" data-add-amz-idx="${idx}">+ Add</button>`
+                                                  : ''
+                                            }
+                                          </td>
+                                        </tr>`;
+                                      })
+                                      .join('')
+                                  : `<tr><td colspan="3" class="muted">Every Amazon wishlist book is already in your app wishlist!</td></tr>`
+                              }
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                `;
+              })()
+            : ''
+        }
+      </div>
+    </details>
+
     <section class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem">
         <h2 class="card-title" style="margin:0">Unbought Books (${sorted.length})</h2>
@@ -160,6 +315,19 @@ export function renderWishlist(container, ctx) {
           <option value="checked" ${wishlistSort === 'checked' ? 'selected' : ''}>Sort: Oldest Checked First</option>
           <option value="title" ${wishlistSort === 'title' ? 'selected' : ''}>Sort: Title</option>
         </select>
+      </div>
+
+      <div class="filters-bar" style="padding:0.6rem 0.75rem;border:1px solid var(--border);border-radius:8px;background:var(--bg)">
+        <span style="font-size:0.84rem;font-weight:600">Bulk Target Price:</span>
+        <input id="bulk-target-input" class="input" style="width:95px" type="number" step="0.01" min="0" placeholder="£ e.g. 2.99" value="${esc(bulkTargetValue)}" />
+        <select id="bulk-target-scope" class="select">
+          <option value="wishlist_blank" ${bulkTargetScope === 'wishlist_blank' ? 'selected' : ''}>Main Wishlist (blank targets only)</option>
+          <option value="wishlist_all_overwrite" ${bulkTargetScope === 'wishlist_all_overwrite' ? 'selected' : ''}>Main Wishlist (all / overwrite)</option>
+          <option value="unbought_all" ${bulkTargetScope === 'unbought_all' ? 'selected' : ''}>All Unbought incl. Series Backlog</option>
+          <option value="all_books" ${bulkTargetScope === 'all_books' ? 'selected' : ''}>All Books in Library</option>
+        </select>
+        <button id="btn-bulk-target-set" class="btn btn-sm" type="button">Set Target Price</button>
+        <button id="btn-bulk-target-clear" class="btn btn-danger btn-sm" type="button">Clear Targets</button>
       </div>
 
       <div class="table-wrap">
@@ -214,19 +382,21 @@ export function renderWishlist(container, ctx) {
         </table>
       </div>
     </section>
-  `;
+  </div>`;
 
-  container.querySelector('#csv-scope')?.addEventListener('change', (e) => {
+  const root = container.firstElementChild;
+
+  root.querySelector('#csv-scope')?.addEventListener('change', (e) => {
     csvScope = e.target.value;
     renderWishlist(container, ctx);
   });
 
-  container.querySelector('#wishlist-sort')?.addEventListener('change', (e) => {
+  root.querySelector('#wishlist-sort')?.addEventListener('change', (e) => {
     wishlistSort = e.target.value;
     renderWishlist(container, ctx);
   });
 
-  container.querySelector('#btn-download-csv')?.addEventListener('click', () => {
+  root.querySelector('#btn-download-csv')?.addEventListener('click', () => {
     const scopeBooks = getScopeBooks(store.data.books, csvScope);
     const csv = exportPriceCheckCsv(scopeBooks);
     downloadTextFile(`booklist_prices_${todayIso()}.csv`, csv, 'text/csv;charset=utf-8');
@@ -245,8 +415,8 @@ export function renderWishlist(container, ctx) {
     renderWishlist(container, ctx);
   };
 
-  const dropzone = container.querySelector('#csv-dropzone');
-  const fileInput = container.querySelector('#csv-file-input');
+  const dropzone = root.querySelector('#csv-dropzone');
+  const fileInput = root.querySelector('#csv-file-input');
   dropzone?.addEventListener('click', () => fileInput?.click());
   dropzone?.addEventListener('dragover', (e) => {
     e.preventDefault();
@@ -260,12 +430,12 @@ export function renderWishlist(container, ctx) {
   });
   fileInput?.addEventListener('change', (e) => handleFile(e.target.files?.[0]));
 
-  container.querySelector('#btn-cancel-preview')?.addEventListener('click', () => {
+  root.querySelector('#btn-cancel-preview')?.addEventListener('click', () => {
     pendingPreview = null;
     renderWishlist(container, ctx);
   });
 
-  container.querySelectorAll('[data-preview-idx]').forEach((cb) => {
+  root.querySelectorAll('[data-preview-idx]').forEach((cb) => {
     cb.addEventListener('change', (e) => {
       const idx = Number(e.target.dataset.previewIdx);
       if (pendingPreview?.items[idx]) {
@@ -275,7 +445,7 @@ export function renderWishlist(container, ctx) {
     });
   });
 
-  container.querySelector('#btn-apply-csv')?.addEventListener('click', () => {
+  root.querySelector('#btn-apply-csv')?.addEventListener('click', () => {
     if (!pendingPreview) return;
     const updates = pendingPreview.items
       .filter((it) => it.selected && it.book && it.newPrice !== null)
@@ -285,7 +455,96 @@ export function renderWishlist(container, ctx) {
     ctx.toast(`Updated prices on ${count} book${count === 1 ? '' : 's'}`, 'ok');
   });
 
-  container.querySelectorAll('[data-target-id]').forEach((inp) => {
+  // Bulk target price controls
+  root.querySelector('#bulk-target-input')?.addEventListener('input', (e) => {
+    bulkTargetValue = e.target.value;
+  });
+  root.querySelector('#bulk-target-scope')?.addEventListener('change', (e) => {
+    bulkTargetScope = e.target.value;
+  });
+
+  const resolveBulkOpts = () => {
+    if (bulkTargetScope === 'wishlist_blank') return { scope: 'wishlist_library', onlyBlank: true };
+    if (bulkTargetScope === 'wishlist_all_overwrite') return { scope: 'wishlist_library', onlyBlank: false };
+    if (bulkTargetScope === 'unbought_all') return { scope: 'wishlist_all', onlyBlank: false };
+    return { scope: 'all_books', onlyBlank: false };
+  };
+
+  root.querySelector('#btn-bulk-target-set')?.addEventListener('click', () => {
+    const raw = bulkTargetValue.trim();
+    if (!raw) {
+      ctx.toast('Enter a target price (e.g. 2.99) first.', 'error');
+      return;
+    }
+    try {
+      const count = store.bulkSetTargetPrice(raw, resolveBulkOpts());
+      ctx.toast(`Set target price £${Number(raw).toFixed(2)} on ${count} book${count === 1 ? '' : 's'}`, 'ok');
+    } catch (err) {
+      ctx.toast(err.message, 'error');
+    }
+  });
+
+  root.querySelector('#btn-bulk-target-clear')?.addEventListener('click', () => {
+    const opts = resolveBulkOpts();
+    if (!window.confirm('Clear target prices for the selected scope?')) return;
+    const count = store.bulkSetTargetPrice(null, { scope: opts.scope, onlyBlank: false });
+    ctx.toast(`Cleared target prices on ${count} book${count === 1 ? '' : 's'}`, 'ok');
+  });
+
+  // Amazon Wishlist comparison
+  const detailsEl = root.querySelector('#amazon-compare-details');
+  detailsEl?.addEventListener('toggle', () => {
+    amazonCompareOpen = detailsEl.open;
+  });
+
+  const runComparison = (raw) => {
+    amazonRawInput = raw;
+    const parsed = parseAmazonWishlistInput(raw);
+    if (!parsed.items.length) {
+      ctx.toast('Could not find any Amazon wishlist items in that input.', 'error');
+      return;
+    }
+    amazonComparison = compareAmazonWishlist(parsed.items, store.data.books);
+    amazonCompareOpen = true;
+    renderWishlist(container, ctx);
+  };
+
+  root.querySelector('#amz-compare-text')?.addEventListener('input', (e) => {
+    amazonRawInput = e.target.value;
+  });
+
+  root.querySelector('#btn-run-amz-compare')?.addEventListener('click', () => {
+    runComparison(amazonRawInput);
+  });
+
+  root.querySelector('#amz-html-input')?.addEventListener('change', async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const txt = await file.text();
+    runComparison(txt);
+  });
+
+  root.querySelector('#btn-clear-amz-compare')?.addEventListener('click', () => {
+    amazonRawInput = '';
+    amazonComparison = null;
+    renderWishlist(container, ctx);
+  });
+
+  root.querySelector('#btn-apply-amz-prices')?.addEventListener('click', () => {
+    if (!amazonComparison?.priceChanges?.length) return;
+    const updates = amazonComparison.priceChanges.map((p) => ({
+      bookId: p.book.id,
+      newPrice: p.newPrice,
+    }));
+    const count = store.applyPriceUpdates(updates);
+    amazonComparison = compareAmazonWishlist(
+      parseAmazonWishlistInput(amazonRawInput).items,
+      store.data.books
+    );
+    ctx.toast(`Updated prices on ${count} book${count === 1 ? '' : 's'}`, 'ok');
+  });
+
+  root.querySelectorAll('[data-target-id]').forEach((inp) => {
     inp.addEventListener('change', (e) => {
       const id = e.target.dataset.targetId;
       const raw = e.target.value.trim();
@@ -296,12 +555,47 @@ export function renderWishlist(container, ctx) {
     });
   });
 
-  container.addEventListener('click', (e) => {
+  root.addEventListener('click', (e) => {
+    const addAmz = e.target.closest('[data-add-amz-idx]');
+    if (addAmz && amazonComparison) {
+      const item = amazonComparison.missingFromApp[Number(addAmz.dataset.addAmzIdx)]?.amazonItem;
+      if (item) {
+        ctx.openBookModal(null, {
+          title: item.title || '',
+          author: item.author || '',
+          amazon_asin: item.asin || '',
+          current_price: item.price ?? '',
+          ownership: 'not_owned',
+          list_scope: 'library',
+        });
+      }
+      return;
+    }
+
+    const promoteBtn = e.target.closest('[data-promote-id]');
+    if (promoteBtn) {
+      store.promoteToLibrary(promoteBtn.dataset.promoteId);
+      if (amazonRawInput) {
+        amazonComparison = compareAmazonWishlist(
+          parseAmazonWishlistInput(amazonRawInput).items,
+          store.data.books
+        );
+      }
+      ctx.toast('Promoted to main wishlist', 'ok');
+      return;
+    }
+
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
     const { action, id } = btn.dataset;
     if (action === 'bought') {
       store.markBought(id);
+      if (amazonComparison && amazonRawInput) {
+        amazonComparison = compareAmazonWishlist(
+          parseAmazonWishlistInput(amazonRawInput).items,
+          store.data.books
+        );
+      }
       ctx.toast('Marked as bought!', 'ok');
     } else if (action === 'edit') {
       ctx.openBookModal(id);

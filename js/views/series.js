@@ -1,5 +1,6 @@
 import { store } from '../store.js';
 import { amazonUrl, esc, formatPrice, statusLabel } from '../utils.js';
+import { openAttachBooksModal, openCreateSeriesModal } from './seriesModal.js';
 
 const expandedSeries = new Set();
 let seriesQuery = '';
@@ -15,64 +16,73 @@ function seriesStats(books) {
   return { total, read, owned, sorted, nextBook, pct };
 }
 
-function renderSeriesTable(books, seriesObj, ctx) {
+function renderSeriesTable(books, seriesObj) {
   const { sorted, nextBook } = seriesStats(books);
   return `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;flex-wrap:wrap;gap:0.5rem">
       <div style="font-size:0.86rem">
         ${
-          nextBook
-            ? `Next up: <strong>#${nextBook.series_order ?? '?'} ${esc(nextBook.title)}</strong> (${nextBook.ownership === 'owned' ? 'Owned' : 'Not bought'})`
-            : `<span style="color:var(--ok);font-weight:600">All books in series read!</span>`
+          !books.length
+            ? `<span class="muted">No books in this series yet.</span>`
+            : nextBook
+              ? `Next up: <strong>#${nextBook.series_order ?? '?'} ${esc(nextBook.title)}</strong> (${nextBook.ownership === 'owned' ? 'Owned' : 'Not bought'})`
+              : `<span style="color:var(--ok);font-weight:600">All books in series read!</span>`
         }
       </div>
-      <button class="btn btn-xs" data-add-to-series="${esc(seriesObj.id)}">+ Add Next Book</button>
+      <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
+        <button class="btn btn-xs" data-attach-to-series="${esc(seriesObj.id)}" type="button">+ Add Existing Books</button>
+        <button class="btn btn-primary btn-xs" data-add-to-series="${esc(seriesObj.id)}" type="button">+ Add New Book</button>
+      </div>
     </div>
-    <div class="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Title</th>
-            <th>Author</th>
-            <th class="num">Pub</th>
-            <th>Owned</th>
-            <th>Status</th>
-            <th class="num">Price</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${sorted
-            .map((b) => {
-              const isNext = nextBook && nextBook.id === b.id;
-              const amz = amazonUrl(b);
-              return `<tr>
-                <td class="mono">${b.series_order ?? '—'}</td>
-                <td>
-                  <strong>${esc(b.title)}</strong>
-                  ${isNext ? `<span class="badge badge-up_next" style="margin-left:0.35rem">Next</span>` : ''}
-                  ${b.list_scope === 'series_backlog' ? `<span class="badge badge-unread" style="margin-left:0.25rem">Backlog</span>` : ''}
-                </td>
-                <td>${esc(b.author)}</td>
-                <td class="num">${b.pub_year ?? '—'}</td>
-                <td>${b.ownership === 'owned' ? '<span class="badge badge-owned">Owned</span>' : '<span class="badge badge-wishlist">Wishlist</span>'}</td>
-                <td><span class="badge badge-${esc(b.status)}">${esc(statusLabel(b.status))}</span></td>
-                <td class="num">${formatPrice(b.current_price)}</td>
-                <td style="white-space:nowrap">
-                  ${b.ownership === 'not_owned' ? `<button class="btn btn-xs" data-action="bought" data-id="${esc(b.id)}">Bought</button>` : ''}
-                  ${b.status !== 'read' ? `<button class="btn btn-ok btn-xs" data-action="finish" data-id="${esc(b.id)}">Read</button>` : ''}
-                  ${b.status === 'unread' ? `<button class="btn btn-xs" data-action="start" data-id="${esc(b.id)}">Reading</button>` : ''}
-                  ${b.list_scope === 'series_backlog' ? `<button class="btn btn-xs" data-action="promote" data-id="${esc(b.id)}" title="Show in main Book List">Promote</button>` : ''}
-                  ${amz ? `<a class="btn btn-xs" href="${esc(amz)}" target="_blank" rel="noopener">Kindle ↗</a>` : ''}
-                  <button class="btn btn-ghost btn-xs" data-action="edit" data-id="${esc(b.id)}">Edit</button>
-                </td>
-              </tr>`;
-            })
-            .join('')}
-        </tbody>
-      </table>
-    </div>
+    ${
+      sorted.length
+        ? `<div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Title</th>
+                  <th>Author</th>
+                  <th class="num">Pub</th>
+                  <th>Owned</th>
+                  <th>Status</th>
+                  <th class="num">Price</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${sorted
+                  .map((b) => {
+                    const isNext = nextBook && nextBook.id === b.id;
+                    const amz = amazonUrl(b);
+                    return `<tr>
+                      <td class="mono">${b.series_order ?? '—'}</td>
+                      <td>
+                        <strong>${esc(b.title)}</strong>
+                        ${isNext ? `<span class="badge badge-up_next" style="margin-left:0.35rem">Next</span>` : ''}
+                        ${b.list_scope === 'series_backlog' ? `<span class="badge badge-unread" style="margin-left:0.25rem">Backlog</span>` : ''}
+                      </td>
+                      <td>${esc(b.author)}</td>
+                      <td class="num">${b.pub_year ?? '—'}</td>
+                      <td>${b.ownership === 'owned' ? '<span class="badge badge-owned">Owned</span>' : '<span class="badge badge-wishlist">Wishlist</span>'}</td>
+                      <td><span class="badge badge-${esc(b.status)}">${esc(statusLabel(b.status))}</span></td>
+                      <td class="num">${formatPrice(b.current_price)}</td>
+                      <td style="white-space:nowrap">
+                        ${b.ownership === 'not_owned' ? `<button class="btn btn-xs" data-action="bought" data-id="${esc(b.id)}">Bought</button>` : ''}
+                        ${b.status !== 'read' ? `<button class="btn btn-ok btn-xs" data-action="finish" data-id="${esc(b.id)}">Read</button>` : ''}
+                        ${b.status === 'unread' ? `<button class="btn btn-xs" data-action="start" data-id="${esc(b.id)}">Reading</button>` : ''}
+                        ${b.list_scope === 'series_backlog' ? `<button class="btn btn-xs" data-action="promote" data-id="${esc(b.id)}" title="Show in main Book List">Promote</button>` : ''}
+                        ${amz ? `<a class="btn btn-xs" href="${esc(amz)}" target="_blank" rel="noopener">Kindle ↗</a>` : ''}
+                        <button class="btn btn-ghost btn-xs" data-action="edit" data-id="${esc(b.id)}">Edit</button>
+                      </td>
+                    </tr>`;
+                  })
+                  .join('')}
+              </tbody>
+            </table>
+          </div>`
+        : ''
+    }
   `;
 }
 
@@ -101,15 +111,14 @@ export function renderSeries(container, ctx) {
 
   const q = seriesQuery.trim().toLowerCase();
 
-  const renderCard = (s, isChild = false) => {
+  const renderCard = (s) => {
     const children = childrenMap.get(s.id) || [];
     const ownBooks = bySeries.get(s.id) || [];
     const aggregateBooks = [...ownBooks, ...children.flatMap((c) => bySeries.get(c.id) || [])];
-    if (!aggregateBooks.length && !children.length) return '';
 
     const stats = seriesStats(aggregateBooks);
-    if (seriesFilter === 'in_progress' && stats.read === stats.total) return '';
-    if (seriesFilter === 'to_buy' && stats.owned === stats.total) return '';
+    if (seriesFilter === 'in_progress' && (stats.total === 0 || stats.read === stats.total)) return '';
+    if (seriesFilter === 'to_buy' && (stats.total === 0 || stats.owned === stats.total)) return '';
 
     if (q) {
       const hay = `${s.name} ${s.author_default || ''} ${aggregateBooks.map((b) => `${b.title} ${b.author}`).join(' ')} ${children.map((c) => c.name).join(' ')}`.toLowerCase();
@@ -128,7 +137,7 @@ export function renderSeries(container, ctx) {
               ${children.length ? `<span class="badge badge-unread" style="margin-left:0.35rem">${children.length} sub-series</span>` : ''}
             </div>
             <div class="muted" style="font-size:0.84rem">
-              ${esc(authorLabel)}${stats.nextBook && !children.length ? ` · Next: #${stats.nextBook.series_order ?? '?'} ${esc(stats.nextBook.title)}` : ''}
+              ${esc(authorLabel)}${stats.nextBook && !children.length ? ` · Next: #${stats.nextBook.series_order ?? '?'} ${esc(stats.nextBook.title)}` : !stats.total && !children.length ? ' · Empty series' : ''}
             </div>
           </div>
           <div style="display:flex;align-items:center;gap:0.75rem">
@@ -144,11 +153,11 @@ export function renderSeries(container, ctx) {
         ${
           isOpen
             ? `<div class="series-body">
-                ${ownBooks.length ? renderSeriesTable(ownBooks, s, ctx) : ''}
+                ${ownBooks.length || !children.length ? renderSeriesTable(ownBooks, s) : ''}
                 ${
                   children.length
                     ? `<div class="subseries-indent">
-                        ${children.map((c) => renderCard(c, true)).join('')}
+                        ${children.map((c) => renderCard(c)).join('')}
                       </div>`
                     : ''
                 }
@@ -161,13 +170,14 @@ export function renderSeries(container, ctx) {
 
   const cardsHtml = topSeries.map((s) => renderCard(s)).filter(Boolean).join('');
 
-  container.innerHTML = `
+  container.innerHTML = `<div class="view-root">
     <div class="page-header">
       <div>
         <h1 class="page-title">Series Tracker</h1>
         <p class="page-subtitle">Unified with your Book List — marking a book bought or read updates both views automatically.</p>
       </div>
-      <div style="display:flex;gap:0.5rem">
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+        <button id="btn-new-series" class="btn btn-primary btn-sm" type="button">+ New Series</button>
         <button id="btn-expand-all" class="btn btn-sm" type="button">Expand All</button>
         <button id="btn-collapse-all" class="btn btn-sm" type="button">Collapse All</button>
       </div>
@@ -185,9 +195,11 @@ export function renderSeries(container, ctx) {
     <div class="series-stack">
       ${cardsHtml || `<div class="card muted">No series match your filter.</div>`}
     </div>
-  `;
+  </div>`;
 
-  container.querySelector('#series-search')?.addEventListener('input', (e) => {
+  const root = container.firstElementChild;
+
+  root.querySelector('#series-search')?.addEventListener('input', (e) => {
     seriesQuery = e.target.value;
     renderSeries(container, ctx);
     const inp = container.querySelector('#series-search');
@@ -197,27 +209,42 @@ export function renderSeries(container, ctx) {
     }
   });
 
-  container.querySelector('#series-filter')?.addEventListener('change', (e) => {
+  root.querySelector('#series-filter')?.addEventListener('change', (e) => {
     seriesFilter = e.target.value;
     renderSeries(container, ctx);
   });
 
-  container.querySelector('#btn-expand-all')?.addEventListener('click', () => {
+  root.querySelector('#btn-new-series')?.addEventListener('click', () => {
+    openCreateSeriesModal((created) => {
+      expandedSeries.add(created.id);
+      if (created.parent_series_id) expandedSeries.add(created.parent_series_id);
+      renderSeries(container, ctx);
+    }, ctx.toast);
+  });
+
+  root.querySelector('#btn-expand-all')?.addEventListener('click', () => {
     allSeries.forEach((s) => expandedSeries.add(s.id));
     renderSeries(container, ctx);
   });
-  container.querySelector('#btn-collapse-all')?.addEventListener('click', () => {
+  root.querySelector('#btn-collapse-all')?.addEventListener('click', () => {
     expandedSeries.clear();
     renderSeries(container, ctx);
   });
 
-  container.addEventListener('click', (e) => {
+  root.addEventListener('click', (e) => {
     const toggle = e.target.closest('[data-toggle-series]');
     if (toggle) {
       const sid = toggle.dataset.toggleSeries;
       if (expandedSeries.has(sid)) expandedSeries.delete(sid);
       else expandedSeries.add(sid);
       renderSeries(container, ctx);
+      return;
+    }
+
+    const attachBtn = e.target.closest('[data-attach-to-series]');
+    if (attachBtn) {
+      const sid = attachBtn.dataset.attachToSeries;
+      openAttachBooksModal(sid, () => renderSeries(container, ctx), ctx.toast);
       return;
     }
 
