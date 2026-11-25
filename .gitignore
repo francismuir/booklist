@@ -1,0 +1,7 @@
+# Personal library data (keep your reading list in your separate private repo)
+Data/
+migration_report.md
+scripts/.cache/
+Recommendation.md
+App_notes.txt
+.DS_Store

@@ -1,0 +1,16 @@
+{
+  "name": "BookList — Reading & Series Tracker",
+  "short_name": "BookList",
+  "description": "Personal book reading, series, and Kindle price tracker",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#faf7f2",
+  "theme_color": "#8c3b2b",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect width='192' height='192' rx='36' fill='%238c3b2b'/%3E%3Cpath d='M52 44h36c10 0 18 8 18 18v86c-6-6-13-8-22-8H52V44zm88 0h-36c-10 0-18 8-18 18v86c6-6 13-8 22-8h32V44z' fill='%23faf7f2'/%3E%3C/svg%3E",
+      "sizes": "192x192",
+      "type": "image/svg+xml"
+    }
+  ]
+}
