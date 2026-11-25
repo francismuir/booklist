@@ -211,6 +211,7 @@ export function renderWishlist(container, ctx) {
                       <span class="badge badge-warn">${c.missingFromAmazon.length} missing from Amazon</span>
                       <span class="badge badge-factual">${c.missingFromApp.length} missing from App wishlist</span>
                       ${c.priceChanges.length ? `<span class="badge badge-drop">${c.priceChanges.length} price changes detected</span>` : ''}
+                      ${c.asinUpdates.length ? `<span class="badge badge-unread">${c.asinUpdates.length} ASIN edition difference${c.asinUpdates.length === 1 ? '' : 's'}</span>` : ''}
                     </div>
 
                     ${
@@ -219,6 +220,22 @@ export function renderWishlist(container, ctx) {
                             <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem">
                               <strong>${c.priceChanges.length} matched book${c.priceChanges.length === 1 ? '' : 's'} have updated Amazon prices</strong>
                               <button id="btn-apply-amz-prices" class="btn btn-ok btn-xs" type="button">Apply ${c.priceChanges.length} Price Updates</button>
+                            </div>
+                          </div>`
+                        : ''
+                    }
+
+                    ${
+                      c.asinUpdates.length
+                        ? `<div style="margin-bottom:0.9rem;padding:0.65rem 0.85rem;border:1px solid var(--border);border-radius:8px;background:var(--warn-soft)">
+                            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem">
+                              <div>
+                                <strong>${c.asinUpdates.length} matched book${c.asinUpdates.length === 1 ? '' : 's'} have a different edition ASIN on Amazon</strong>
+                                <div class="muted" style="font-size:0.82rem;margin-top:0.2rem">
+                                  ${c.asinUpdates.map((u) => `${esc(u.book.title)} (<span class="mono">${esc(u.oldAsin || '—')} → ${esc(u.newAsin)}</span>)`).join(', ')}
+                                </div>
+                              </div>
+                              <button id="btn-apply-amz-asins" class="btn btn-sm" type="button">Update ${c.asinUpdates.length} ASIN${c.asinUpdates.length === 1 ? '' : 's'} from Amazon</button>
                             </div>
                           </div>`
                         : ''
@@ -542,6 +559,20 @@ export function renderWishlist(container, ctx) {
       store.data.books
     );
     ctx.toast(`Updated prices on ${count} book${count === 1 ? '' : 's'}`, 'ok');
+  });
+
+  root.querySelector('#btn-apply-amz-asins')?.addEventListener('click', () => {
+    if (!amazonComparison?.asinUpdates?.length) return;
+    const updates = amazonComparison.asinUpdates.map((u) => ({
+      bookId: u.book.id,
+      newAsin: u.newAsin,
+    }));
+    const count = store.applyAsinUpdates(updates);
+    amazonComparison = compareAmazonWishlist(
+      parseAmazonWishlistInput(amazonRawInput).items,
+      store.data.books
+    );
+    ctx.toast(`Updated ASIN on ${count} book${count === 1 ? '' : 's'}`, 'ok');
   });
 
   root.querySelectorAll('[data-target-id]').forEach((inp) => {

@@ -35,10 +35,36 @@ function parsePriceValue(raw) {
 }
 
 function extractAsinFromText(str) {
-  const m = String(str || '').match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i);
+  const s = String(str || '');
+  const m = s.match(/\/(?:dp|gp\/product|gp\/offer-listing)\/([A-Z0-9]{10})/i);
   if (m) return m[1].toUpperCase();
-  const direct = String(str || '').trim().match(/\b([A-Z0-9]{10})\b/);
+  const paramMatch = s.match(/ASIN:([A-Z0-9]{10})/i);
+  if (paramMatch) return paramMatch[1].toUpperCase();
+  const direct = s.trim().match(/\b([A-Z0-9]{10})\b/);
   return direct ? direct[1].toUpperCase() : null;
+}
+
+/** Normalize title down to its core base title (strips trailing parentheticals & subtitles). */
+export function baseTitleNorm(title) {
+  let s = normText(title);
+  s = s.replace(/\s*\([^)]*\)\s*$/g, '').trim();
+  if (s.includes(':')) s = s.split(':', 1)[0].trim();
+  s = s.replace(/[^a-z0-9\s]/g, ' ');
+  return s.replace(/\s+/g, ' ').trim();
+}
+
+function surnameNorm(author) {
+  const s = normText(author).replace(/[^a-z0-9\s]/g, ' ').trim();
+  if (!s) return '';
+  const parts = s.split(/\s+/);
+  return parts[parts.length - 1];
+}
+
+function authorsCompatible(bookAuthor, itemAuthor) {
+  const s1 = surnameNorm(bookAuthor);
+  const s2 = surnameNorm(itemAuthor);
+  if (!s1 || !s2) return true;
+  return s1 === s2 || normText(bookAuthor).includes(s2) || normText(itemAuthor).includes(s1);
 }
 
 function dedupeByAsin(items) {
@@ -89,29 +115,31 @@ export function parseAmazonWishlistInput(rawText) {
   // 2. Saved Amazon Wishlist HTML
   if (/<(?:html|li|div|a)\b/i.test(text) && (text.includes('data-itemid') || text.includes('itemName_') || text.includes('/dp/'))) {
     const items = [];
-    // Split on wishlist list items when present
     const blocks = text.includes('data-itemid')
       ? text.split(/<li\b[^>]*data-itemid=/i).slice(1)
       : text.split(/id=["']itemName_/i).slice(1);
 
     for (const blk of blocks) {
-      // Limit block scan to avoid bleeding across unrelated markup
       const slice = blk.slice(0, 12000);
       const linkMatch =
         slice.match(/<a[^>]*id=["']itemName_[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/i) ||
-        slice.match(/<a[^>]*href=["']([^"']*\/(?:dp|gp\/product)\/[A-Z0-9]{10}[^"']*)["'][^>]*title=["']([^"']+)["'][^>]*>/i) ||
-        slice.match(/<a[^>]*href=["']([^"']*\/(?:dp|gp\/product)\/[A-Z0-9]{10}[^"']*)["'][^>]*>([\s\S]*?)<\/a>/i);
+        slice.match(/<a[^>]*href=["']([^"']*\/(?:dp|gp\/product|gp\/offer-listing)\/[A-Z0-9]{10}[^"']*)["'][^>]*title=["']([^"']+)["'][^>]*>/i) ||
+        slice.match(/<a[^>]*href=["']([^"']*\/(?:dp|gp\/product|gp\/offer-listing)\/[A-Z0-9]{10}[^"']*)["'][^>]*>([\s\S]*?)<\/a>/i);
 
       let asin = null;
       let title = '';
       if (linkMatch) {
         asin = extractAsinFromText(linkMatch[1]);
         title = stripTags(linkMatch[2]);
-      } else {
-        const dpMatch = slice.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i);
-        if (dpMatch) asin = dpMatch[1].toUpperCase();
       }
-      if (!asin) continue;
+      if (!title) {
+        const titleOnlyMatch = slice.match(/<[^>]*id=["']itemName_[^"']*["'][^>]*>([\s\S]*?)<\/[^>]+>/i);
+        if (titleOnlyMatch) title = stripTags(titleOnlyMatch[1]);
+      }
+      if (!asin) {
+        asin = extractAsinFromText(slice);
+      }
+      if (!asin && !title) continue;
 
       const bylineMatch = slice.match(/<span[^>]*id=["']item-byline-[^"']*["'][^>]*>([\s\S]*?)<\/span>/i);
       const author = bylineMatch ? cleanAuthorByline(stripTags(bylineMatch[1])) : '';
@@ -156,24 +184,12 @@ export function parseAmazonWishlistInput(rawText) {
 
 /**
  * Compare parsed Amazon wishlist items against the app's wishlist (not_owned + library).
- * Also checks allBooks so items already owned or in series_backlog are flagged clearly.
+ * Uses symmetric 3-tier matching: ASIN -> exact title -> base title + author surname.
  */
 export function compareAmazonWishlist(amazonItems, appBooks) {
   const appWishlist = appBooks.filter((b) => b.ownership === 'not_owned' && b.list_scope === 'library');
+
   const appWishlistByAsin = new Map();
-  const allByAsin = new Map();
-  const allByTitle = new Map();
-
-  for (const b of appBooks) {
-    const aid = amazonDisplayId(b).toUpperCase();
-    if (aid && /^[A-Z0-9]{10}$/.test(aid)) {
-      if (!allByAsin.has(aid)) allByAsin.set(aid, []);
-      allByAsin.get(aid).push(b);
-    }
-    const tKey = normText(b.title);
-    if (tKey && !allByTitle.has(tKey)) allByTitle.set(tKey, b);
-  }
-
   for (const b of appWishlist) {
     const aid = amazonDisplayId(b).toUpperCase();
     if (aid && /^[A-Z0-9]{10}$/.test(aid)) {
@@ -182,31 +198,61 @@ export function compareAmazonWishlist(amazonItems, appBooks) {
     }
   }
 
-  const amazonAsins = new Set(amazonItems.map((i) => i.asin).filter(Boolean));
-  const amazonTitles = new Set(amazonItems.map((i) => normText(i.title)).filter(Boolean));
-
-  const missingFromAmazon = [];
-  for (const b of appWishlist) {
+  const allByAsin = new Map();
+  const allByTitle = new Map();
+  const allByBaseTitle = new Map();
+  for (const b of appBooks) {
     const aid = amazonDisplayId(b).toUpperCase();
-    const matchedByAsin = aid && amazonAsins.has(aid);
-    const matchedByTitle = !aid && amazonTitles.has(normText(b.title));
-    if (!matchedByAsin && !matchedByTitle) {
-      missingFromAmazon.push(b);
+    if (aid && /^[A-Z0-9]{10}$/.test(aid)) {
+      if (!allByAsin.has(aid)) allByAsin.set(aid, []);
+      allByAsin.get(aid).push(b);
+    }
+    const tKey = normText(b.title);
+    if (tKey && !allByTitle.has(tKey)) allByTitle.set(tKey, b);
+    const btKey = baseTitleNorm(b.title);
+    if (btKey) {
+      if (!allByBaseTitle.has(btKey)) allByBaseTitle.set(btKey, []);
+      allByBaseTitle.get(btKey).push(b);
     }
   }
 
+  const matchedBookIds = new Set();
   const missingFromApp = [];
   const matched = [];
   const priceChanges = [];
+  const asinUpdates = [];
 
   for (const item of amazonItems) {
-    const wishlistHits = item.asin ? appWishlistByAsin.get(item.asin) || [] : [];
-    let appWishBook = wishlistHits[0] || null;
+    let appWishBook = null;
+
+    // Tier 1: Exact ASIN match
+    if (item.asin) {
+      const hits = (appWishlistByAsin.get(item.asin) || []).filter((b) => !matchedBookIds.has(b.id));
+      if (hits.length) appWishBook = hits[0];
+    }
+
+    // Tier 2: Exact normalized title
     if (!appWishBook && item.title) {
-      appWishBook = appWishlist.find((b) => normText(b.title) === normText(item.title)) || null;
+      const tNorm = normText(item.title);
+      appWishBook = appWishlist.find((b) => !matchedBookIds.has(b.id) && normText(b.title) === tNorm) || null;
+    }
+
+    // Tier 3: Base title + compatible author surname
+    if (!appWishBook && item.title) {
+      const btNorm = baseTitleNorm(item.title);
+      if (btNorm) {
+        appWishBook =
+          appWishlist.find(
+            (b) =>
+              !matchedBookIds.has(b.id) &&
+              baseTitleNorm(b.title) === btNorm &&
+              authorsCompatible(b.author, item.author)
+          ) || null;
+      }
     }
 
     if (appWishBook) {
+      matchedBookIds.add(appWishBook.id);
       matched.push({ amazonItem: item, book: appWishBook });
       if (item.price !== null && item.price !== undefined && item.price !== appWishBook.current_price) {
         priceChanges.push({
@@ -215,16 +261,31 @@ export function compareAmazonWishlist(amazonItems, appBooks) {
           newPrice: item.price,
         });
       }
+      if (item.asin && /^[A-Z0-9]{10}$/.test(item.asin) && item.asin !== appWishBook.amazon_asin) {
+        asinUpdates.push({
+          book: appWishBook,
+          oldAsin: amazonDisplayId(appWishBook) || null,
+          newAsin: item.asin,
+        });
+      }
       continue;
     }
 
-    const otherMatches = item.asin ? allByAsin.get(item.asin) || [] : [];
-    const existingOther = otherMatches[0] || (item.title ? allByTitle.get(normText(item.title)) : null) || null;
+    // Check if present elsewhere in appBooks (e.g. owned or series_backlog)
+    const otherAsinHits = item.asin ? allByAsin.get(item.asin) || [] : [];
+    let existingOther = otherAsinHits[0] || (item.title ? allByTitle.get(normText(item.title)) : null) || null;
+    if (!existingOther && item.title) {
+      const btHits = allByBaseTitle.get(baseTitleNorm(item.title)) || [];
+      existingOther = btHits.find((b) => authorsCompatible(b.author, item.author)) || null;
+    }
+
     missingFromApp.push({
       amazonItem: item,
       existingBook: existingOther,
     });
   }
+
+  const missingFromAmazon = appWishlist.filter((b) => !matchedBookIds.has(b.id));
 
   return {
     appWishlistCount: appWishlist.length,
@@ -233,10 +294,11 @@ export function compareAmazonWishlist(amazonItems, appBooks) {
     missingFromApp,
     matched,
     priceChanges,
+    asinUpdates,
   };
 }
 
 export function getWishlistBookmarkletCode() {
-  const fnBody = `(function(){var els=document.querySelectorAll('li[data-itemid]');if(!els.length){alert('Open your Amazon UK Wishlist and scroll down so items load first.');return;}var out=[];els.forEach(function(li){var a=li.querySelector('a[id^="itemName_"]')||li.querySelector('a[href*="/dp/"]');if(!a)return;var m=(a.getAttribute('href')||'').match(/\\/(?:dp|gp\\/product)\\/([A-Z0-9]{10})/i);if(!m)return;var by=li.querySelector('[id^="item-byline-"]');var dp=li.getAttribute('data-price');var pr=dp?parseFloat(dp):null;if(pr===null||isNaN(pr)){var pe=li.querySelector('.a-price .a-offscreen');if(pe){var pm=pe.textContent.replace(/,/g,'').match(/(\\d+(?:\\.\\d{1,2})?)/);if(pm)pr=parseFloat(pm[1]);}}out.push({asin:m[1].toUpperCase(),title:(a.getAttribute('title')||a.textContent||'').replace(/\\s+/g,' ').trim(),author:by?by.textContent.replace(/^by\\s+/i,'').replace(/\\s*\\([^)]*Edition[^)]*\\)/i,'').trim():'',price:pr});});var json=JSON.stringify(out);if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(json).then(function(){alert('Copied '+out.length+' wishlist items! Paste them into BookList Compare.');},function(){window.prompt('Copy this JSON ('+out.length+' items):',json);});}else{window.prompt('Copy this JSON ('+out.length+' items):',json);}})();`;
+  const fnBody = `(function(){var els=document.querySelectorAll('li[data-itemid]');if(!els.length){alert('Open your Amazon UK Wishlist and scroll down so items load first.');return;}var out=[];els.forEach(function(li){var a=li.querySelector('a[id^="itemName_"]')||li.querySelector('a[href*="/dp/"]')||li.querySelector('a[href*="/gp/"]');var href=a?(a.getAttribute('href')||''):'';var m=href.match(/\\/(?:dp|gp\\/product|gp\\/offer-listing)\\/([A-Z0-9]{10})/i);if(!m){var rp=li.getAttribute('data-reposition-action-params')||'';m=rp.match(/ASIN:([A-Z0-9]{10})/i);}var titleEl=a||li.querySelector('[id^="itemName_"]');var title=titleEl?(titleEl.getAttribute('title')||titleEl.textContent||'').replace(/\\s+/g,' ').trim():'';if(!m&&!title)return;var by=li.querySelector('[id^="item-byline-"]');var dp=li.getAttribute('data-price');var pr=dp?parseFloat(dp):null;if(pr===null||isNaN(pr)){var pe=li.querySelector('.a-price .a-offscreen');if(pe){var pm=pe.textContent.replace(/,/g,'').match(/(\\d+(?:\\.\\d{1,2})?)/);if(pm)pr=parseFloat(pm[1]);}}out.push({asin:m?m[1].toUpperCase():'',title:title,author:by?by.textContent.replace(/^by\\s+/i,'').replace(/\\s*\\([^)]*Edition[^)]*\\)/i,'').trim():'',price:pr});});var json=JSON.stringify(out);if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(json).then(function(){alert('Copied '+out.length+' wishlist items! Paste them into BookList Compare.');},function(){window.prompt('Copy this JSON ('+out.length+' items):',json);});}else{window.prompt('Copy this JSON ('+out.length+' items):',json);}})();`;
   return 'javascript:' + encodeURIComponent(fnBody);
 }

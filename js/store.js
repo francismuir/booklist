@@ -451,6 +451,19 @@ class LibraryStore extends EventTarget {
     if (count > 0) this.persistLocal(true);
     return count;
   }
+
+  applyAsinUpdates(updates) {
+    let count = 0;
+    for (const u of updates) {
+      const b = this.getBook(u.bookId);
+      if (!b || !u.newAsin) continue;
+      b.amazon_asin = u.newAsin;
+      b.amazon_legacy_code = null;
+      count += 1;
+    }
+    if (count > 0) this.persistLocal(true);
+    return count;
+  }
 }
 
 export const store = new LibraryStore();
