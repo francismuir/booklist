@@ -8,7 +8,7 @@ let wishlistSort = 'price_asc'; // 'price_asc' | 'price_desc' | 'title' | 'check
 let pendingPreview = null; // { items, fileName }
 let amazonCompareOpen = false;
 let amazonRawInput = '';
-let amazonComparison = null;
+let amazonParsedItems = null;
 let bulkTargetScope = 'wishlist_blank'; // 'wishlist_blank' | 'wishlist_all_overwrite' | 'unbought_all' | 'all_books'
 let bulkTargetValue = '';
 
@@ -41,6 +41,7 @@ export function renderWishlist(container, ctx) {
 
   const exportCount = getScopeBooks(allBooks, csvScope).length;
   const bookmarkletHref = getWishlistBookmarkletCode();
+  const amazonComparison = amazonParsedItems ? compareAmazonWishlist(amazonParsedItems, allBooks) : null;
 
   container.innerHTML = `<div class="view-root">
     <div class="page-header">
@@ -207,6 +208,7 @@ export function renderWishlist(container, ctx) {
                 return `
                   <div style="margin-top:0.95rem;padding-top:0.85rem;border-top:1px solid var(--border)">
                     <div style="display:flex;gap:0.6rem;flex-wrap:wrap;margin-bottom:0.85rem">
+                      <span class="badge badge-unread">${c.amazonCount} Amazon items parsed</span>
                       <span class="badge badge-owned">${c.matched.length} matched</span>
                       <span class="badge badge-warn">${c.missingFromAmazon.length} missing from Amazon</span>
                       <span class="badge badge-factual">${c.missingFromApp.length} missing from App wishlist</span>
@@ -521,7 +523,7 @@ export function renderWishlist(container, ctx) {
       ctx.toast('Could not find any Amazon wishlist items in that input.', 'error');
       return;
     }
-    amazonComparison = compareAmazonWishlist(parsed.items, store.data.books);
+    amazonParsedItems = parsed.items;
     amazonCompareOpen = true;
     renderWishlist(container, ctx);
   };
@@ -543,7 +545,7 @@ export function renderWishlist(container, ctx) {
 
   root.querySelector('#btn-clear-amz-compare')?.addEventListener('click', () => {
     amazonRawInput = '';
-    amazonComparison = null;
+    amazonParsedItems = null;
     renderWishlist(container, ctx);
   });
 
@@ -554,10 +556,6 @@ export function renderWishlist(container, ctx) {
       newPrice: p.newPrice,
     }));
     const count = store.applyPriceUpdates(updates);
-    amazonComparison = compareAmazonWishlist(
-      parseAmazonWishlistInput(amazonRawInput).items,
-      store.data.books
-    );
     ctx.toast(`Updated prices on ${count} book${count === 1 ? '' : 's'}`, 'ok');
   });
 
@@ -568,10 +566,6 @@ export function renderWishlist(container, ctx) {
       newAsin: u.newAsin,
     }));
     const count = store.applyAsinUpdates(updates);
-    amazonComparison = compareAmazonWishlist(
-      parseAmazonWishlistInput(amazonRawInput).items,
-      store.data.books
-    );
     ctx.toast(`Updated ASIN on ${count} book${count === 1 ? '' : 's'}`, 'ok');
   });
 
@@ -606,12 +600,6 @@ export function renderWishlist(container, ctx) {
     const promoteBtn = e.target.closest('[data-promote-id]');
     if (promoteBtn) {
       store.promoteToLibrary(promoteBtn.dataset.promoteId);
-      if (amazonRawInput) {
-        amazonComparison = compareAmazonWishlist(
-          parseAmazonWishlistInput(amazonRawInput).items,
-          store.data.books
-        );
-      }
       ctx.toast('Promoted to main wishlist', 'ok');
       return;
     }
@@ -621,12 +609,6 @@ export function renderWishlist(container, ctx) {
     const { action, id } = btn.dataset;
     if (action === 'bought') {
       store.markBought(id);
-      if (amazonComparison && amazonRawInput) {
-        amazonComparison = compareAmazonWishlist(
-          parseAmazonWishlistInput(amazonRawInput).items,
-          store.data.books
-        );
-      }
       ctx.toast('Marked as bought!', 'ok');
     } else if (action === 'edit') {
       ctx.openBookModal(id);

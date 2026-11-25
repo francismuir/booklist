@@ -67,7 +67,9 @@ export function amazonDisplayId(book) {
 }
 
 export function parseAmazonInput(raw) {
-  const s = String(raw || '').trim();
+  let s = String(raw || '').trim();
+  // Strip surrounding quotes/commas when pasting directly from JSON
+  s = s.replace(/^["'\s,]+|["'\s,]+$/g, '');
   if (!s) return { asin: null, legacy: null };
   // Direct 10-char ASIN
   if (/^[A-Z0-9]{10}$/i.test(s)) {
@@ -77,10 +79,15 @@ export function parseAmazonInput(raw) {
   if (/^\d{9}$/.test(s)) {
     return { asin: s.padStart(10, '0'), legacy: null };
   }
-  // URL containing /dp/ or /gp/product/
-  const dpMatch = s.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{10})/i);
+  // URL containing /dp/, /gp/product/, /gp/aw/d/, or /gp/offer-listing/
+  const dpMatch = s.match(/\/(?:dp|gp\/product|gp\/aw\/d|gp\/offer-listing)\/([A-Z0-9]{10})/i);
   if (dpMatch) {
     return { asin: dpMatch[1].toUpperCase(), legacy: null };
+  }
+  // ASIN:B00... format
+  const paramMatch = s.match(/ASIN:([A-Z0-9]{10})/i);
+  if (paramMatch) {
+    return { asin: paramMatch[1].toUpperCase(), legacy: null };
   }
   // amzn.eu/<code>
   const euMatch = s.match(/amzn\.eu\/(?:d\/)?([A-Za-z0-9]+)/i);

@@ -350,6 +350,10 @@ export function openBookModal(bookId = null, prefill = {}, onSaved = null, toast
 
     const amzRaw = modalRoot.querySelector('#f-amazon').value.trim();
     const parsedAmz = parseAmazonInput(amzRaw);
+    if (amzRaw && !parsedAmz.asin && !parsedAmz.legacy) {
+      toast('Could not parse Amazon ID/URL — please check the format.', 'error');
+      return;
+    }
 
     const numOrNull = (val) => (val === '' || val === null ? null : Number(val));
     const pubYrRaw = modalRoot.querySelector('#f-pub-year').value.trim();
