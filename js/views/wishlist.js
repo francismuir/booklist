@@ -1,7 +1,18 @@
 import { compareAmazonWishlist, getWishlistBookmarkletCode, parseAmazonWishlistInput } from '../amazonWishlist.js';
 import { exportPriceCheckCsv, parsePriceCheckCsv } from '../csv.js';
 import { store } from '../store.js';
-import { amazonDisplayId, amazonUrl, downloadTextFile, esc, formatDate, formatPrice, todayIso } from '../utils.js';
+import { amazonDisplayId, amazonUrl, downloadTextFile, esc, formatDate, formatPrice, sortableTitle, todayIso } from '../utils.js';
+
+const LS_IGNORE_ARTICLES_KEY = 'booklist_ignore_articles_v1';
+
+function getIgnoreArticles() {
+  try {
+    const val = localStorage.getItem(LS_IGNORE_ARTICLES_KEY);
+    return val === null ? true : val === 'true';
+  } catch {
+    return true;
+  }
+}
 
 let csvScope = 'wishlist_library'; // 'wishlist_library' | 'wishlist_all' | 'all_books'
 let wishlistSort = 'price_asc'; // 'price_asc' | 'price_desc' | 'title' | 'checked'
@@ -32,11 +43,15 @@ export function renderWishlist(container, ctx) {
     (b) => b.target_price !== null && b.current_price !== null && b.current_price <= b.target_price
   );
 
+  const ignoreArticles = getIgnoreArticles();
   const sorted = [...wishlist].sort((a, b) => {
     if (wishlistSort === 'price_asc') return (a.current_price ?? 9999) - (b.current_price ?? 9999);
     if (wishlistSort === 'price_desc') return (b.current_price ?? -1) - (a.current_price ?? -1);
     if (wishlistSort === 'checked') return (a.price_checked_at || '').localeCompare(b.price_checked_at || '');
-    return a.title.localeCompare(b.title);
+    return (
+      sortableTitle(a.title, ignoreArticles).localeCompare(sortableTitle(b.title, ignoreArticles)) ||
+      a.title.localeCompare(b.title)
+    );
   });
 
   const exportCount = getScopeBooks(allBooks, csvScope).length;
@@ -328,12 +343,22 @@ export function renderWishlist(container, ctx) {
     <section class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem">
         <h2 class="card-title" style="margin:0">Unbought Books (${sorted.length})</h2>
-        <select id="wishlist-sort" class="select">
-          <option value="price_asc" ${wishlistSort === 'price_asc' ? 'selected' : ''}>Sort: Price (Low → High)</option>
-          <option value="price_desc" ${wishlistSort === 'price_desc' ? 'selected' : ''}>Sort: Price (High → Low)</option>
-          <option value="checked" ${wishlistSort === 'checked' ? 'selected' : ''}>Sort: Oldest Checked First</option>
-          <option value="title" ${wishlistSort === 'title' ? 'selected' : ''}>Sort: Title</option>
-        </select>
+        <div style="display:flex;align-items:center;gap:0.65rem;flex-wrap:wrap">
+          ${
+            wishlistSort === 'title'
+              ? `<label style="display:inline-flex;align-items:center;gap:0.35rem;font-size:0.84rem">
+                  <input type="checkbox" id="wishlist-ignore-articles" ${ignoreArticles ? 'checked' : ''} />
+                  Ignore "The" / "A" / "An"
+                </label>`
+              : ''
+          }
+          <select id="wishlist-sort" class="select">
+            <option value="price_asc" ${wishlistSort === 'price_asc' ? 'selected' : ''}>Sort: Price (Low → High)</option>
+            <option value="price_desc" ${wishlistSort === 'price_desc' ? 'selected' : ''}>Sort: Price (High → Low)</option>
+            <option value="checked" ${wishlistSort === 'checked' ? 'selected' : ''}>Sort: Oldest Checked First</option>
+            <option value="title" ${wishlistSort === 'title' ? 'selected' : ''}>Sort: Title</option>
+          </select>
+        </div>
       </div>
 
       <div class="filters-bar" style="padding:0.6rem 0.75rem;border:1px solid var(--border);border-radius:8px;background:var(--bg)">
@@ -412,6 +437,15 @@ export function renderWishlist(container, ctx) {
 
   root.querySelector('#wishlist-sort')?.addEventListener('change', (e) => {
     wishlistSort = e.target.value;
+    renderWishlist(container, ctx);
+  });
+
+  root.querySelector('#wishlist-ignore-articles')?.addEventListener('change', (e) => {
+    try {
+      localStorage.setItem(LS_IGNORE_ARTICLES_KEY, String(e.target.checked));
+    } catch {
+      // ignore
+    }
     renderWishlist(container, ctx);
   });
 

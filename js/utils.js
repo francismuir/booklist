@@ -42,6 +42,12 @@ export function authorSurname(author) {
   return parts[parts.length - 1].toLowerCase();
 }
 
+export function sortableTitle(title, ignoreArticles = true) {
+  const s = String(title || '').trim();
+  if (!ignoreArticles) return s;
+  return s.replace(/^(?:the|a|an)\s+/i, '').trim() || s;
+}
+
 export function normText(text) {
   return String(text || '')
     .toLowerCase()

@@ -1,5 +1,16 @@
 import { store } from '../store.js';
-import { amazonUrl, authorSurname, debounce, esc, formatDate, formatPrice, normText, statusLabel } from '../utils.js';
+import { amazonUrl, authorSurname, debounce, esc, formatDate, formatPrice, normText, sortableTitle, statusLabel } from '../utils.js';
+
+const LS_IGNORE_ARTICLES_KEY = 'booklist_ignore_articles_v1';
+
+function loadIgnoreArticles() {
+  try {
+    const val = localStorage.getItem(LS_IGNORE_ARTICLES_KEY);
+    return val === null ? true : val === 'true';
+  } catch {
+    return true;
+  }
+}
 
 const DEFAULT_FILTERS = {
   q: '',
@@ -13,6 +24,7 @@ const DEFAULT_FILTERS = {
   includeBacklog: false,
   sortBy: 'author',
   sortDir: 'asc',
+  ignoreTitleArticles: loadIgnoreArticles(),
   limit: 150,
 };
 
@@ -24,6 +36,7 @@ export function applyBooksRouteParams(params) {
     ...DEFAULT_FILTERS,
     sortBy: filterState.sortBy,
     sortDir: filterState.sortDir,
+    ignoreTitleArticles: filterState.ignoreTitleArticles,
   });
   if (params.status) filterState.status = params.status;
   if (params.ownership) filterState.ownership = params.ownership;
@@ -88,9 +101,12 @@ export function renderBooks(container, ctx) {
   filtered.sort((a, b) => {
     let cmp = 0;
     switch (filterState.sortBy) {
-      case 'title':
-        cmp = a.title.localeCompare(b.title);
+      case 'title': {
+        const ta = sortableTitle(a.title, filterState.ignoreTitleArticles);
+        const tb = sortableTitle(b.title, filterState.ignoreTitleArticles);
+        cmp = ta.localeCompare(tb) || a.title.localeCompare(b.title);
         break;
+      }
       case 'price': {
         const pa = a.current_price ?? (dir > 0 ? 999999 : -1);
         const pb = b.current_price ?? (dir > 0 ? 999999 : -1);
@@ -199,6 +215,15 @@ export function renderBooks(container, ctx) {
         </select>
 
         <button id="sort-dir" class="btn btn-sm" type="button" title="Toggle sort direction">${filterState.sortDir === 'asc' ? '↑ Asc' : '↓ Desc'}</button>
+
+        ${
+          filterState.sortBy === 'title'
+            ? `<label style="display:inline-flex;align-items:center;gap:0.35rem;font-size:0.84rem">
+                <input type="checkbox" id="sort-ignore-articles" ${filterState.ignoreTitleArticles ? 'checked' : ''} />
+                Ignore "The" / "A" / "An"
+              </label>`
+            : ''
+        }
 
         <label style="display:inline-flex;align-items:center;gap:0.35rem;font-size:0.84rem">
           <input type="checkbox" id="filter-backlog" ${filterState.includeBacklog ? 'checked' : ''} />
@@ -311,6 +336,16 @@ export function renderBooks(container, ctx) {
 
   root.querySelector('#sort-dir')?.addEventListener('click', () => {
     filterState.sortDir = filterState.sortDir === 'asc' ? 'desc' : 'asc';
+    renderBooks(container, ctx);
+  });
+
+  root.querySelector('#sort-ignore-articles')?.addEventListener('change', (e) => {
+    filterState.ignoreTitleArticles = e.target.checked;
+    try {
+      localStorage.setItem(LS_IGNORE_ARTICLES_KEY, String(filterState.ignoreTitleArticles));
+    } catch {
+      // ignore
+    }
     renderBooks(container, ctx);
   });
 
