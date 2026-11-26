@@ -1,4 +1,5 @@
 import { store } from './store.js';
+import { downloadTextFile, todayIso } from './utils.js';
 import { openBookModal } from './views/bookModal.js';
 import { applyBooksRouteParams, renderBooks } from './views/books.js';
 import { renderDashboard } from './views/dashboard.js';
@@ -61,7 +62,33 @@ function updateSyncUi() {
     }
   }
 
-  if (store.mode === 'demo') {
+  if (store.remoteConflict) {
+    modeBanner.classList.remove('hidden');
+    modeBanner.innerHTML = `
+      <span><strong>Sync conflict:</strong> <code>library.json</code> was updated on another device while you have unsaved local edits.</span>
+      <div style="display:flex;gap:0.45rem;flex-wrap:wrap">
+        <button id="btn-conflict-download" class="btn btn-sm" type="button">⬇ Download Local Copy</button>
+        <button id="btn-conflict-pull" class="btn btn-primary btn-sm" type="button">⬇ Pull Latest from GitHub</button>
+      </div>
+    `;
+    modeBanner.querySelector('#btn-conflict-download')?.addEventListener('click', () => {
+      downloadTextFile(
+        `library_local_unsaved_${todayIso()}.json`,
+        JSON.stringify(store.data, null, 2),
+        'application/json'
+      );
+      toast('Downloaded local unsaved backup', 'ok');
+    });
+    modeBanner.querySelector('#btn-conflict-pull')?.addEventListener('click', async () => {
+      if (!window.confirm('Replace your unsaved local edits with the latest library.json from GitHub?')) return;
+      try {
+        await store.pullFromGithub();
+        toast('Pulled latest library from GitHub', 'ok');
+      } catch (err) {
+        toast(`Pull failed: ${err.message}`, 'error');
+      }
+    });
+  } else if (store.mode === 'demo') {
     modeBanner.classList.remove('hidden');
     modeBanner.innerHTML = `
       <span>Showing sample demo data. Connect your private GitHub data repo or import <code>library.json</code> to use your own books.</span>
@@ -130,6 +157,20 @@ syncPill?.addEventListener('click', async () => {
     window.location.hash = '#/settings';
   }
 });
+
+async function handleFocusCheck() {
+  const res = await store.checkForRemoteUpdates();
+  if (res.status === 'updated') {
+    toast('Synced latest changes from GitHub', 'ok');
+  } else if (res.status === 'conflict') {
+    toast('GitHub has newer changes — review sync banner above', 'error');
+  }
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') handleFocusCheck();
+});
+window.addEventListener('focus', handleFocusCheck);
 
 window.addEventListener('hashchange', renderCurrentRoute);
 store.addEventListener('change', renderCurrentRoute);

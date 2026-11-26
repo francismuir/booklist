@@ -17,6 +17,8 @@ class LibraryStore extends EventTarget {
     this.syncError = null;
     this.dirty = false;
     this.githubSha = null;
+    this.remoteConflict = false;
+    this._lastRemoteCheckAt = 0;
     this.githubConfig = this.loadGithubConfig();
   }
 
@@ -109,6 +111,8 @@ class LibraryStore extends EventTarget {
       }
       if (!this.dirty) {
         await this.pullFromGithub({ silent: true });
+      } else {
+        await this.checkForRemoteUpdates({ force: true });
       }
       return;
     }
@@ -163,6 +167,8 @@ class LibraryStore extends EventTarget {
       this.githubSha = sha;
       this.mode = 'github';
       this.dirty = false;
+      this.remoteConflict = false;
+      this._lastRemoteCheckAt = Date.now();
       this.syncState = 'synced';
       this.persistLocal(false);
       return data;
@@ -172,6 +178,42 @@ class LibraryStore extends EventTarget {
       this.emitChange();
       if (!silent) throw err;
       return null;
+    }
+  }
+
+  async checkForRemoteUpdates({ force = false } = {}) {
+    if (!this.hasGithubCredentials()) return { status: 'skipped' };
+    if (this.syncState === 'syncing') return { status: 'skipped' };
+    const now = Date.now();
+    if (!force && now - this._lastRemoteCheckAt < 30000) {
+      return { status: 'skipped' };
+    }
+    try {
+      const { data, sha } = await fetchLibraryFromGithub(this.githubConfig);
+      this._lastRemoteCheckAt = Date.now();
+      if (sha === this.githubSha) {
+        if (this.remoteConflict) {
+          this.remoteConflict = false;
+          this.emitChange();
+        }
+        return { status: 'up_to_date' };
+      }
+      if (!this.dirty) {
+        this.data = data;
+        this.githubSha = sha;
+        this.mode = 'github';
+        this.remoteConflict = false;
+        this.syncError = null;
+        this.syncState = 'synced';
+        this.persistLocal(false);
+        return { status: 'updated' };
+      }
+      this.remoteConflict = true;
+      this.syncError = 'Remote library.json changed on another device — pull latest or back up local edits first.';
+      this.emitChange();
+      return { status: 'conflict' };
+    } catch {
+      return { status: 'error' };
     }
   }
 
@@ -190,12 +232,19 @@ class LibraryStore extends EventTarget {
       if (sha) this.githubSha = sha;
       this.mode = 'github';
       this.dirty = false;
+      this.remoteConflict = false;
+      this._lastRemoteCheckAt = Date.now();
       this.syncState = 'synced';
       this.persistLocal(false);
       return sha;
     } catch (err) {
       this.syncState = 'error';
-      this.syncError = err.message;
+      if (err.status === 409 || err.status === 422) {
+        this.remoteConflict = true;
+        this.syncError = 'Remote library.json changed on another device — pull latest or back up local edits first.';
+      } else {
+        this.syncError = err.message;
+      }
       this.emitChange();
       throw err;
     }
