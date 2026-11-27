@@ -1,5 +1,6 @@
 # Personal library data (keep your reading list in your separate private repo)
 Data/
+data_update/
 migration_report.md
 scripts/.cache/
 Recommendation.md
