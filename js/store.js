@@ -468,7 +468,7 @@ class LibraryStore extends EventTarget {
     this.persistLocal(true);
   }
 
-  markBought(id) {
+  markOwned(id) {
     const b = this.getBook(id);
     if (!b) return;
     b.ownership = 'owned';

@@ -25,7 +25,7 @@ function renderSeriesTable(books, seriesObj) {
           !books.length
             ? `<span class="muted">No books in this series yet.</span>`
             : nextBook
-              ? `Next up: <strong>#${nextBook.series_order ?? '?'} ${esc(nextBook.title)}</strong> (${nextBook.ownership === 'owned' ? 'Owned' : 'Not bought'})`
+              ? `Next up: <strong>#${nextBook.series_order ?? '?'} ${esc(nextBook.title)}</strong> (${nextBook.ownership === 'owned' ? 'Owned' : 'Not owned'})`
               : `<span style="color:var(--ok);font-weight:600">All books in series read!</span>`
         }
       </div>
@@ -68,7 +68,11 @@ function renderSeriesTable(books, seriesObj) {
                       <td><span class="badge badge-${esc(b.status)}">${esc(statusLabel(b.status))}</span></td>
                       <td class="num">${formatPrice(b.current_price)}</td>
                       <td style="white-space:nowrap">
-                        ${b.ownership === 'not_owned' ? `<button class="btn btn-xs" data-action="bought" data-id="${esc(b.id)}">Bought</button>` : ''}
+                        ${
+                          b.ownership === 'owned'
+                            ? `<button class="btn btn-xs btn-owned-done" type="button" disabled title="Already owned">Owned</button>`
+                            : `<button class="btn btn-xs" type="button" data-action="owned" data-id="${esc(b.id)}" title="Mark as owned">Owned</button>`
+                        }
                         ${b.status !== 'read' ? `<button class="btn btn-ok btn-xs" data-action="finish" data-id="${esc(b.id)}">Read</button>` : ''}
                         ${b.status === 'unread' ? `<button class="btn btn-xs" data-action="start" data-id="${esc(b.id)}">Reading</button>` : ''}
                         ${b.list_scope === 'series_backlog' ? `<button class="btn btn-xs" data-action="promote" data-id="${esc(b.id)}" title="Show in main Book List">Promote</button>` : ''}
@@ -174,7 +178,7 @@ export function renderSeries(container, ctx) {
     <div class="page-header">
       <div>
         <h1 class="page-title">Series Tracker</h1>
-        <p class="page-subtitle">Unified with your Book List — marking a book bought or read updates both views automatically.</p>
+        <p class="page-subtitle">Unified with your Book List — marking a book owned or read updates both views automatically.</p>
       </div>
       <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
         <button id="btn-new-series" class="btn btn-primary btn-sm" type="button">+ New Series</button>
@@ -188,7 +192,7 @@ export function renderSeries(container, ctx) {
       <select id="series-filter" class="select">
         <option value="all" ${seriesFilter === 'all' ? 'selected' : ''}>All Series</option>
         <option value="in_progress" ${seriesFilter === 'in_progress' ? 'selected' : ''}>Incomplete (Unread remaining)</option>
-        <option value="to_buy" ${seriesFilter === 'to_buy' ? 'selected' : ''}>Has Unbought Books</option>
+        <option value="to_buy" ${seriesFilter === 'to_buy' ? 'selected' : ''}>Has Unowned Books</option>
       </select>
     </div>
 
@@ -266,9 +270,9 @@ export function renderSeries(container, ctx) {
     const actionBtn = e.target.closest('[data-action]');
     if (!actionBtn) return;
     const { action, id } = actionBtn.dataset;
-    if (action === 'bought') {
-      store.markBought(id);
-      ctx.toast('Marked as bought & added to Book List', 'ok');
+    if (action === 'owned') {
+      store.markOwned(id);
+      ctx.toast('Marked as owned & added to Book List', 'ok');
     } else if (action === 'finish') {
       store.markRead(id);
       ctx.toast('Marked as read', 'ok');

@@ -87,8 +87,8 @@ export function openBookModal(bookId = null, prefill = {}, onSaved = null, toast
             <div class="form-field">
               <label class="form-label" for="f-ownership">Ownership</label>
               <select id="f-ownership" class="select">
-                <option value="owned" ${book.ownership === 'owned' ? 'selected' : ''}>Owned / Bought</option>
-                <option value="not_owned" ${book.ownership === 'not_owned' ? 'selected' : ''}>Not Bought (Wishlist)</option>
+                <option value="owned" ${book.ownership === 'owned' ? 'selected' : ''}>Owned</option>
+                <option value="not_owned" ${book.ownership === 'not_owned' ? 'selected' : ''}>Not Owned (Wishlist)</option>
                 <option value="borrowed" ${book.ownership === 'borrowed' ? 'selected' : ''}>Borrowed</option>
               </select>
             </div>

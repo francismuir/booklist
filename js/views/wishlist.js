@@ -20,7 +20,7 @@ let pendingPreview = null; // { items, fileName }
 let amazonCompareOpen = false;
 let amazonRawInput = '';
 let amazonParsedItems = null;
-let bulkTargetScope = 'wishlist_blank'; // 'wishlist_blank' | 'wishlist_all_overwrite' | 'unbought_all' | 'all_books'
+let bulkTargetScope = 'wishlist_blank'; // 'wishlist_blank' | 'wishlist_all_overwrite' | 'unowned_all' | 'all_books'
 let bulkTargetValue = '';
 
 function getScopeBooks(books, scope) {
@@ -83,8 +83,8 @@ export function renderWishlist(container, ctx) {
 
       <div class="filters-bar" style="margin-bottom:0.75rem">
         <select id="csv-scope" class="select">
-          <option value="wishlist_library" ${csvScope === 'wishlist_library' ? 'selected' : ''}>Main Wishlist (Not Bought, ${getScopeBooks(allBooks, 'wishlist_library').length} books)</option>
-          <option value="wishlist_all" ${csvScope === 'wishlist_all' ? 'selected' : ''}>All Unbought incl. Series Backlog (${getScopeBooks(allBooks, 'wishlist_all').length} books)</option>
+          <option value="wishlist_library" ${csvScope === 'wishlist_library' ? 'selected' : ''}>Main Wishlist (Not Owned, ${getScopeBooks(allBooks, 'wishlist_library').length} books)</option>
+          <option value="wishlist_all" ${csvScope === 'wishlist_all' ? 'selected' : ''}>All Unowned incl. Series Backlog (${getScopeBooks(allBooks, 'wishlist_all').length} books)</option>
           <option value="all_books" ${csvScope === 'all_books' ? 'selected' : ''}>Entire Library (${allBooks.length} books)</option>
         </select>
         <button id="btn-download-csv" class="btn btn-primary" type="button">⬇ Download Price Check CSV (${exportCount})</button>
@@ -275,7 +275,7 @@ export function renderWishlist(container, ctx) {
                                           <td>${esc(b.author)}</td>
                                           <td style="white-space:nowrap">
                                             ${amz ? `<a class="btn btn-xs" href="${esc(amz)}" target="_blank" rel="noopener">Open ↗</a>` : ''}
-                                            <button class="btn btn-ok btn-xs" data-action="bought" data-id="${esc(b.id)}">Bought</button>
+                                            <button class="btn btn-ok btn-xs" data-action="owned" data-id="${esc(b.id)}">Owned</button>
                                           </td>
                                         </tr>`;
                                       })
@@ -342,7 +342,7 @@ export function renderWishlist(container, ctx) {
 
     <section class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem">
-        <h2 class="card-title" style="margin:0">Unbought Books (${sorted.length})</h2>
+        <h2 class="card-title" style="margin:0">Unowned Books (${sorted.length})</h2>
         <div style="display:flex;align-items:center;gap:0.65rem;flex-wrap:wrap">
           ${
             wishlistSort === 'title'
@@ -367,7 +367,7 @@ export function renderWishlist(container, ctx) {
         <select id="bulk-target-scope" class="select">
           <option value="wishlist_blank" ${bulkTargetScope === 'wishlist_blank' ? 'selected' : ''}>Main Wishlist (blank targets only)</option>
           <option value="wishlist_all_overwrite" ${bulkTargetScope === 'wishlist_all_overwrite' ? 'selected' : ''}>Main Wishlist (all / overwrite)</option>
-          <option value="unbought_all" ${bulkTargetScope === 'unbought_all' ? 'selected' : ''}>All Unbought incl. Series Backlog</option>
+          <option value="unowned_all" ${bulkTargetScope === 'unowned_all' ? 'selected' : ''}>All Unowned incl. Series Backlog</option>
           <option value="all_books" ${bulkTargetScope === 'all_books' ? 'selected' : ''}>All Books in Library</option>
         </select>
         <button id="btn-bulk-target-set" class="btn btn-sm" type="button">Set Target Price</button>
@@ -414,13 +414,13 @@ export function renderWishlist(container, ctx) {
                         <td>${formatDate(b.price_checked_at)}</td>
                         <td style="white-space:nowrap">
                           ${amz ? `<a class="btn btn-primary btn-xs" href="${esc(amz)}" target="_blank" rel="noopener">Buy on Kindle ↗</a>` : `<span class="muted mono">${esc(amazonDisplayId(b) || 'No ID')}</span>`}
-                          <button class="btn btn-ok btn-xs" data-action="bought" data-id="${esc(b.id)}">Mark Bought</button>
+                          <button class="btn btn-ok btn-xs" data-action="owned" data-id="${esc(b.id)}">Mark Owned</button>
                           <button class="btn btn-ghost btn-xs" data-action="edit" data-id="${esc(b.id)}">Edit</button>
                         </td>
                       </tr>`;
                     })
                     .join('')
-                : `<tr><td colspan="7" class="muted" style="text-align:center;padding:1.4rem">No unbought books in your main wishlist.</td></tr>`
+                : `<tr><td colspan="7" class="muted" style="text-align:center;padding:1.4rem">No unowned books in your main wishlist.</td></tr>`
             }
           </tbody>
         </table>
@@ -519,7 +519,7 @@ export function renderWishlist(container, ctx) {
   const resolveBulkOpts = () => {
     if (bulkTargetScope === 'wishlist_blank') return { scope: 'wishlist_library', onlyBlank: true };
     if (bulkTargetScope === 'wishlist_all_overwrite') return { scope: 'wishlist_library', onlyBlank: false };
-    if (bulkTargetScope === 'unbought_all') return { scope: 'wishlist_all', onlyBlank: false };
+    if (bulkTargetScope === 'unowned_all') return { scope: 'wishlist_all', onlyBlank: false };
     return { scope: 'all_books', onlyBlank: false };
   };
 
@@ -641,9 +641,9 @@ export function renderWishlist(container, ctx) {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
     const { action, id } = btn.dataset;
-    if (action === 'bought') {
-      store.markBought(id);
-      ctx.toast('Marked as bought!', 'ok');
+    if (action === 'owned') {
+      store.markOwned(id);
+      ctx.toast('Marked as owned!', 'ok');
     } else if (action === 'edit') {
       ctx.openBookModal(id);
     }

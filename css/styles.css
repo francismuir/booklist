@@ -236,6 +236,14 @@ button, input, select, textarea {
 .btn-danger { color: var(--danger); border-color: var(--danger); }
 .btn-sm { padding: 0.32rem 0.65rem; font-size: 0.82rem; border-radius: 6px; }
 .btn-xs { padding: 0.2rem 0.48rem; font-size: 0.76rem; border-radius: 5px; }
+.btn-owned-done,
+.btn-owned-done:hover {
+  background: var(--ok-soft);
+  border-color: var(--ok-soft);
+  color: var(--ok);
+  opacity: 0.78;
+  cursor: default;
+}
 
 /* Cards & Grids */
 .card {

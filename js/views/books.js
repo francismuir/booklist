@@ -170,9 +170,9 @@ export function renderBooks(container, ctx) {
         <input id="books-search" class="input search-input" type="search" placeholder="Search author, title, series, notes…" value="${esc(filterState.q)}" />
 
         <select id="filter-ownership" class="select">
-          <option value="all" ${filterState.ownership === 'all' ? 'selected' : ''}>Bought: All</option>
-          <option value="owned" ${filterState.ownership === 'owned' ? 'selected' : ''}>Owned / Bought</option>
-          <option value="not_owned" ${filterState.ownership === 'not_owned' ? 'selected' : ''}>Not Bought</option>
+          <option value="all" ${filterState.ownership === 'all' ? 'selected' : ''}>Owned: All</option>
+          <option value="owned" ${filterState.ownership === 'owned' ? 'selected' : ''}>Owned</option>
+          <option value="not_owned" ${filterState.ownership === 'not_owned' ? 'selected' : ''}>Not Owned</option>
         </select>
 
         <select id="filter-type" class="select">
@@ -270,7 +270,11 @@ export function renderBooks(container, ctx) {
                       <td class="num">${formatPrice(b.current_price)}</td>
                       <td>${formatDate(b.date_read)}</td>
                       <td style="white-space:nowrap">
-                        ${b.ownership === 'not_owned' ? `<button class="btn btn-xs" data-action="bought" data-id="${esc(b.id)}">Bought</button>` : ''}
+                        ${
+                          b.ownership === 'owned'
+                            ? `<button class="btn btn-xs btn-owned-done" type="button" disabled title="Already owned">Owned</button>`
+                            : `<button class="btn btn-xs" type="button" data-action="owned" data-id="${esc(b.id)}" title="Mark as owned">Owned</button>`
+                        }
                         ${b.status === 'unread' || b.status === 'up_next' ? `<button class="btn btn-xs" data-action="start" data-id="${esc(b.id)}">Read Now</button>` : ''}
                         ${b.status === 'reading' ? `<button class="btn btn-ok btn-xs" data-action="finish" data-id="${esc(b.id)}">Finish</button>` : ''}
                         ${amz ? `<a class="btn btn-xs" href="${esc(amz)}" target="_blank" rel="noopener">Kindle ↗</a>` : ''}
@@ -371,9 +375,9 @@ export function renderBooks(container, ctx) {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
     const { action, id } = btn.dataset;
-    if (action === 'bought') {
-      store.markBought(id);
-      ctx.toast('Marked as bought & owned', 'ok');
+    if (action === 'owned') {
+      store.markOwned(id);
+      ctx.toast('Marked as owned', 'ok');
     } else if (action === 'start') {
       store.startReading(id);
       ctx.toast('Marked as currently reading', 'ok');

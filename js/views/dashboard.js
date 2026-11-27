@@ -180,7 +180,7 @@ export function renderDashboard(container, ctx) {
                     </div>
                     <div style="display:flex;gap:0.35rem;flex-wrap:wrap">
                       <span class="badge ${currentPick.is_factual ? 'badge-factual' : 'badge-fiction'}">${currentPick.is_factual ? 'Factual' : 'Fiction'}</span>
-                      <span class="badge ${currentPick.ownership === 'owned' ? 'badge-owned' : 'badge-wishlist'}">${currentPick.ownership === 'owned' ? 'Owned' : 'Not Bought'}</span>
+                      <span class="badge ${currentPick.ownership === 'owned' ? 'badge-owned' : 'badge-wishlist'}">${currentPick.ownership === 'owned' ? 'Owned' : 'Not Owned'}</span>
                       ${sObj ? `<span class="badge badge-unread">${esc(sObj.name)}${currentPick.series_order !== null ? ` #${currentPick.series_order}` : ''}</span>` : ''}
                       ${currentPick.current_price !== null ? `<span class="badge badge-unread">${formatPrice(currentPick.current_price)}</span>` : ''}
                     </div>
