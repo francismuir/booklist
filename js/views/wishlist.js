@@ -316,7 +316,7 @@ export function renderWishlist(container, ctx) {
                                           <td style="white-space:nowrap">
                                             ${
                                               ex && ex.list_scope === 'series_backlog'
-                                                ? `<button class="btn btn-xs" data-promote-id="${esc(ex.id)}">Promote</button>`
+                                                ? `<button class="btn btn-xs" data-promote-id="${esc(ex.id)}" title="Add to main Book List">Add</button>`
                                                 : !ex
                                                   ? `<button class="btn btn-primary btn-xs" data-add-amz-idx="${idx}">+ Add</button>`
                                                   : ''
@@ -634,7 +634,7 @@ export function renderWishlist(container, ctx) {
     const promoteBtn = e.target.closest('[data-promote-id]');
     if (promoteBtn) {
       store.promoteToLibrary(promoteBtn.dataset.promoteId);
-      ctx.toast('Promoted to main wishlist', 'ok');
+      ctx.toast('Added to Book List', 'ok');
       return;
     }
 

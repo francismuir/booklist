@@ -76,7 +76,7 @@ function renderSeriesTable(books, seriesObj) {
                         }
                         ${b.status !== 'read' ? `<button class="btn btn-ok btn-xs" data-action="finish" data-id="${esc(b.id)}">Read</button>` : ''}
                         ${b.status === 'unread' ? `<button class="btn btn-xs" data-action="start" data-id="${esc(b.id)}">Reading</button>` : ''}
-                        ${b.list_scope === 'series_backlog' ? `<button class="btn btn-xs" data-action="promote" data-id="${esc(b.id)}" title="Show in main Book List">Promote</button>` : ''}
+                        ${b.list_scope === 'series_backlog' ? `<button class="btn btn-xs" data-action="promote" data-id="${esc(b.id)}" title="Add to main Book List">Add</button>` : ''}
                         ${amz ? `<a class="btn btn-xs" href="${esc(amz)}" target="_blank" rel="noopener">Kindle ↗</a>` : ''}
                         <button class="btn btn-ghost btn-xs" data-action="edit" data-id="${esc(b.id)}">Edit</button>
                       </td>
@@ -304,7 +304,7 @@ export function renderSeries(container, ctx) {
       ctx.toast('Marked as currently reading', 'ok');
     } else if (action === 'promote') {
       store.promoteToLibrary(id);
-      ctx.toast('Promoted to main Book List', 'ok');
+      ctx.toast('Added to Book List', 'ok');
     } else if (action === 'edit') {
       ctx.openBookModal(id);
     }
