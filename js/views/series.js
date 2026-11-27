@@ -109,6 +109,9 @@ export function renderSeries(container, ctx) {
       childrenMap.get(s.parent_series_id).push(s);
     }
   }
+  for (const list of childrenMap.values()) {
+    list.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
+  }
 
   const topSeries = allSeries
     .filter((s) => !s.parent_series_id)

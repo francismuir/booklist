@@ -1,5 +1,16 @@
 import { store } from '../store.js';
-import { amazonUrl, authorSurname, debounce, esc, formatDate, formatPrice, normText, sortableTitle, statusLabel } from '../utils.js';
+import {
+  amazonUrl,
+  authorSurname,
+  debounce,
+  esc,
+  formatDate,
+  formatPrice,
+  getOrderedSeriesOptions,
+  normText,
+  sortableTitle,
+  statusLabel,
+} from '../utils.js';
 
 const LS_IGNORE_ARTICLES_KEY = 'booklist_ignore_articles_v1';
 
@@ -49,8 +60,15 @@ export function applyBooksRouteParams(params) {
 
 function getSeriesAndDescendantIds(seriesId, seriesList) {
   const ids = new Set([seriesId]);
-  for (const s of seriesList) {
-    if (s.parent_series_id === seriesId) ids.add(s.id);
+  let added = true;
+  while (added) {
+    added = false;
+    for (const s of seriesList) {
+      if (s.parent_series_id && ids.has(s.parent_series_id) && !ids.has(s.id)) {
+        ids.add(s.id);
+        added = true;
+      }
+    }
   }
   return ids;
 }
@@ -58,6 +76,7 @@ function getSeriesAndDescendantIds(seriesId, seriesList) {
 export function renderBooks(container, ctx) {
   const allBooks = store.data.books;
   const seriesList = store.data.series;
+  const orderedSeries = getOrderedSeriesOptions(seriesList);
   const seriesMap = store.getSeriesMap();
 
   const recommenders = [...new Set(allBooks.map((b) => b.recommended_by).filter(Boolean))].sort((a, b) =>
@@ -181,13 +200,13 @@ export function renderBooks(container, ctx) {
           <option value="fiction" ${filterState.type === 'fiction' ? 'selected' : ''}>Fiction Only</option>
         </select>
 
-        <select id="filter-series" class="select">
+        <select id="filter-series" class="select" style="max-width:280px">
           <option value="all">All Series</option>
-          ${seriesList
-            .map((s) => {
-              const label = s.parent_series_id ? `↳ ${s.name}` : s.name;
-              return `<option value="${esc(s.id)}" ${filterState.seriesId === s.id ? 'selected' : ''}>${esc(label)}</option>`;
-            })
+          ${orderedSeries
+            .map(
+              (opt) =>
+                `<option value="${esc(opt.id)}" ${filterState.seriesId === opt.id ? 'selected' : ''}>${esc(opt.label)}</option>`
+            )
             .join('')}
         </select>
 

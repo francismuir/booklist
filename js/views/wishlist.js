@@ -1,7 +1,6 @@
 import { compareAmazonWishlist, getWishlistBookmarkletCode, parseAmazonWishlistInput } from '../amazonWishlist.js';
-import { exportPriceCheckCsv, parsePriceCheckCsv } from '../csv.js';
 import { store } from '../store.js';
-import { amazonDisplayId, amazonUrl, downloadTextFile, esc, formatDate, formatPrice, sortableTitle, todayIso } from '../utils.js';
+import { amazonDisplayId, amazonUrl, esc, formatDate, formatPrice, sortableTitle } from '../utils.js';
 
 const LS_IGNORE_ARTICLES_KEY = 'booklist_ignore_articles_v1';
 
@@ -14,24 +13,12 @@ function getIgnoreArticles() {
   }
 }
 
-let csvScope = 'wishlist_library'; // 'wishlist_library' | 'wishlist_all' | 'all_books'
 let wishlistSort = 'price_asc'; // 'price_asc' | 'price_desc' | 'title' | 'checked'
-let pendingPreview = null; // { items, fileName }
-let amazonCompareOpen = false;
 let amazonRawInput = '';
 let amazonParsedItems = null;
+let lastAutoPriceUpdates = [];
 let bulkTargetScope = 'wishlist_blank'; // 'wishlist_blank' | 'wishlist_all_overwrite' | 'unowned_all' | 'all_books'
 let bulkTargetValue = '';
-
-function getScopeBooks(books, scope) {
-  if (scope === 'wishlist_library') {
-    return books.filter((b) => b.ownership === 'not_owned' && b.list_scope === 'library');
-  }
-  if (scope === 'wishlist_all') {
-    return books.filter((b) => b.ownership === 'not_owned');
-  }
-  return books;
-}
 
 export function renderWishlist(container, ctx) {
   const allBooks = store.data.books;
@@ -54,7 +41,6 @@ export function renderWishlist(container, ctx) {
     );
   });
 
-  const exportCount = getScopeBooks(allBooks, csvScope).length;
   const bookmarkletHref = getWishlistBookmarkletCode();
   const amazonComparison = amazonParsedItems ? compareAmazonWishlist(amazonParsedItems, allBooks) : null;
 
@@ -74,140 +60,21 @@ export function renderWishlist(container, ctx) {
     </div>
 
     <section class="card" style="margin-bottom:1.1rem">
-      <h2 class="card-title">CSV Price Check Round-Trip</h2>
-      <p class="muted" style="margin-top:0;font-size:0.9rem">
-        1. Download a CSV containing <code>book_id</code>, <code>amazon_id</code>, <code>amazon_url</code>, <code>author</code>, <code>title</code>, <code>current_price</code>, and <code>new_price</code>.<br />
-        2. Fill in prices in the <code>new_price</code> column (leave unchanged books blank).<br />
-        3. Upload the updated CSV below to review price drops and apply updates with full price history.
-      </p>
-
-      <div class="filters-bar" style="margin-bottom:0.75rem">
-        <select id="csv-scope" class="select">
-          <option value="wishlist_library" ${csvScope === 'wishlist_library' ? 'selected' : ''}>Main Wishlist (Not Owned, ${getScopeBooks(allBooks, 'wishlist_library').length} books)</option>
-          <option value="wishlist_all" ${csvScope === 'wishlist_all' ? 'selected' : ''}>All Unowned incl. Series Backlog (${getScopeBooks(allBooks, 'wishlist_all').length} books)</option>
-          <option value="all_books" ${csvScope === 'all_books' ? 'selected' : ''}>Entire Library (${allBooks.length} books)</option>
-        </select>
-        <button id="btn-download-csv" class="btn btn-primary" type="button">⬇ Download Price Check CSV (${exportCount})</button>
-      </div>
-
-      <div id="csv-dropzone" class="dropzone" tabindex="0">
-        <input id="csv-file-input" type="file" accept=".csv,text/csv" class="hidden" />
-        <strong>Drop updated CSV here</strong> or <span style="color:var(--accent);text-decoration:underline">choose a file</span>
-      </div>
-
-      ${
-        pendingPreview
-          ? (() => {
-              const items = pendingPreview.items;
-              const drops = items.filter((i) => i.kind === 'drop').length;
-              const rises = items.filter((i) => i.kind === 'increase').length;
-              const newlySet = items.filter((i) => i.kind === 'new_price_set').length;
-              const selectedCount = items.filter((i) => i.selected && i.book).length;
-              return `
-                <div style="margin-top:1rem;padding-top:0.85rem;border-top:1px solid var(--border)">
-                  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.65rem">
-                    <div>
-                      <strong>Preview: ${esc(pendingPreview.fileName)}</strong>
-                      <span class="muted" style="font-size:0.85rem;margin-left:0.5rem">
-                        ${drops} drops · ${rises} increases · ${newlySet} newly priced
-                      </span>
-                    </div>
-                    <div style="display:flex;gap:0.5rem">
-                      <button id="btn-cancel-preview" class="btn btn-sm" type="button">Discard</button>
-                      <button id="btn-apply-csv" class="btn btn-ok btn-sm" type="button" ${selectedCount === 0 ? 'disabled' : ''}>
-                        Apply ${selectedCount} Selected Update${selectedCount === 1 ? '' : 's'}
-                      </button>
-                    </div>
-                  </div>
-                  <div class="table-wrap">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Apply</th>
-                          <th>Title</th>
-                          <th>Author</th>
-                          <th>Amazon ID</th>
-                          <th class="num">Old Price</th>
-                          <th class="num">New Price</th>
-                          <th>Change</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        ${
-                          items.length
-                            ? items
-                                .map((it, idx) => {
-                                  const badge =
-                                    it.kind === 'drop'
-                                      ? `<span class="badge badge-drop">↓ Drop (£${(it.oldPrice - it.newPrice).toFixed(2)})</span>`
-                                      : it.kind === 'increase'
-                                        ? `<span class="badge badge-rise">↑ +£${(it.newPrice - it.oldPrice).toFixed(2)}</span>`
-                                        : it.kind === 'new_price_set'
-                                          ? `<span class="badge badge-owned">New price</span>`
-                                          : it.kind === 'unchanged'
-                                            ? `<span class="badge badge-unread">Unchanged</span>`
-                                            : `<span class="badge badge-abandoned">${esc(it.reason)}</span>`;
-                                  return `<tr>
-                                    <td>
-                                      ${
-                                        it.book
-                                          ? `<input type="checkbox" data-preview-idx="${idx}" ${it.selected ? 'checked' : ''} />`
-                                          : '—'
-                                      }
-                                    </td>
-                                    <td>
-                                      <strong>${esc(it.title)}</strong>
-                                      ${it.hitTarget ? `<span class="badge badge-deal" style="margin-left:0.35rem">Target Hit!</span>` : ''}
-                                    </td>
-                                    <td>${esc(it.author)}</td>
-                                    <td class="mono">${esc(it.amazonId)}</td>
-                                    <td class="num">${formatPrice(it.oldPrice)}</td>
-                                    <td class="num"><strong>${formatPrice(it.newPrice)}</strong></td>
-                                    <td>${badge}</td>
-                                  </tr>`;
-                                })
-                                .join('')
-                            : `<tr><td colspan="7" class="muted" style="text-align:center">No non-blank prices found in the uploaded CSV.</td></tr>`
-                        }
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              `;
-            })()
-          : ''
-      }
-    </section>
-
-    <details class="card" id="amazon-compare-details" style="margin-bottom:1.1rem" ${amazonCompareOpen ? 'open' : ''}>
-      <summary style="cursor:pointer;font-family:var(--font-serif);font-size:1.15rem;font-weight:700">
-        Compare with Amazon Wishlist
-        <span class="muted" style="font-family:var(--font-sans);font-size:0.84rem;font-weight:400;margin-left:0.5rem">
+      <div style="display:flex;align-items:baseline;gap:0.5rem;flex-wrap:wrap;margin-bottom:0.75rem">
+        <h2 class="card-title" style="margin:0">Compare with Amazon Wishlist</h2>
+        <span class="muted" style="font-size:0.84rem">
           Find books missing from Amazon or missing from this app
         </span>
-      </summary>
+      </div>
 
-      <div style="margin-top:0.85rem">
-        <div class="grid-2" style="margin-bottom:0.75rem">
-          <div style="padding:0.7rem;border:1px solid var(--border);border-radius:8px;background:var(--bg)">
-            <div style="font-weight:600;font-size:0.9rem;margin-bottom:0.3rem">Option A — 1-Click Bookmarklet (Easiest)</div>
-            <div class="muted" style="font-size:0.84rem;margin-bottom:0.45rem">
-              Drag this button to your bookmarks bar. Open your <a href="${esc(amazonWishlistUrl)}" target="_blank" rel="noopener">Amazon UK Wishlist</a>, scroll down so all items load, click the bookmarklet, then paste below.
-            </div>
-            <a class="btn btn-sm" href="${bookmarkletHref}" onclick="event.preventDefault()">📋 Copy Amazon Wishlist</a>
-            <span class="muted" style="font-size:0.78rem;margin-left:0.35rem">(drag to bookmarks bar)</span>
+      <div>
+        <div style="padding:0.7rem;border:1px solid var(--border);border-radius:8px;background:var(--bg);margin-bottom:0.75rem">
+          <div style="font-weight:600;font-size:0.9rem;margin-bottom:0.3rem">1-Click Bookmarklet</div>
+          <div class="muted" style="font-size:0.84rem;margin-bottom:0.45rem">
+            Drag this button to your bookmarks bar. Open your <a href="${esc(amazonWishlistUrl)}" target="_blank" rel="noopener">Amazon UK Wishlist</a>, scroll down so all items load, click the bookmarklet, then paste below.
           </div>
-
-          <div style="padding:0.7rem;border:1px solid var(--border);border-radius:8px;background:var(--bg)">
-            <div style="font-weight:600;font-size:0.9rem;margin-bottom:0.3rem">Option B — Saved Amazon HTML File</div>
-            <div class="muted" style="font-size:0.84rem;margin-bottom:0.45rem">
-              On your Amazon wishlist page, press <code>Cmd+S</code> (<em>Webpage, HTML Only</em>) and drop that <code>.html</code> file here:
-            </div>
-            <label class="btn btn-sm" style="cursor:pointer">
-              ⬆ Choose Saved Wishlist HTML
-              <input id="amz-html-input" type="file" accept=".html,.htm,.txt,.json" class="hidden" />
-            </label>
-          </div>
+          <a class="btn btn-sm" href="${bookmarkletHref}" onclick="event.preventDefault()">📋 Copy Amazon Wishlist</a>
+          <span class="muted" style="font-size:0.78rem;margin-left:0.35rem">(drag to bookmarks bar)</span>
         </div>
 
         <textarea id="amz-compare-text" class="textarea mono" style="width:100%;font-size:0.82rem" rows="3" placeholder="Paste bookmarklet JSON, Amazon URLs, or ASINs here…">${esc(amazonRawInput)}</textarea>
@@ -227,17 +94,22 @@ export function renderWishlist(container, ctx) {
                       <span class="badge badge-owned">${c.matched.length} matched</span>
                       <span class="badge badge-warn">${c.missingFromAmazon.length} missing from Amazon</span>
                       <span class="badge badge-factual">${c.missingFromApp.length} missing from App wishlist</span>
-                      ${c.priceChanges.length ? `<span class="badge badge-drop">${c.priceChanges.length} price changes detected</span>` : ''}
+                      ${lastAutoPriceUpdates.length ? `<span class="badge badge-drop">${lastAutoPriceUpdates.length} price${lastAutoPriceUpdates.length === 1 ? '' : 's'} auto-updated</span>` : ''}
                       ${c.asinUpdates.length ? `<span class="badge badge-unread">${c.asinUpdates.length} ASIN edition difference${c.asinUpdates.length === 1 ? '' : 's'}</span>` : ''}
                     </div>
 
                     ${
-                      c.priceChanges.length
-                        ? `<div style="margin-bottom:0.9rem;padding:0.65rem 0.85rem;border:1px solid var(--border);border-radius:8px;background:var(--ok-soft)">
-                            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem">
-                              <strong>${c.priceChanges.length} matched book${c.priceChanges.length === 1 ? '' : 's'} have updated Amazon prices</strong>
-                              <button id="btn-apply-amz-prices" class="btn btn-ok btn-xs" type="button">Apply ${c.priceChanges.length} Price Updates</button>
-                            </div>
+                      lastAutoPriceUpdates.length
+                        ? `<div style="margin-bottom:0.9rem;padding:0.65rem 0.85rem;border:1px solid var(--ok);border-radius:8px;background:var(--ok-soft)">
+                            <strong>Automatically updated ${lastAutoPriceUpdates.length} price${lastAutoPriceUpdates.length === 1 ? '' : 's'} from Amazon:</strong>
+                            <ul style="margin:0.35rem 0 0;padding-left:1.2rem;font-size:0.84rem">
+                              ${lastAutoPriceUpdates
+                                .map(
+                                  (u) =>
+                                    `<li><strong>${esc(u.title)}</strong>: ${formatPrice(u.oldPrice)} → <strong>${formatPrice(u.newPrice)}</strong>${u.hitTarget ? ' <span class="badge badge-deal">Target Hit!</span>' : ''}</li>`
+                                )
+                                .join('')}
+                            </ul>
                           </div>`
                         : ''
                     }
@@ -338,7 +210,7 @@ export function renderWishlist(container, ctx) {
             : ''
         }
       </div>
-    </details>
+    </section>
 
     <section class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.75rem">
@@ -430,11 +302,6 @@ export function renderWishlist(container, ctx) {
 
   const root = container.firstElementChild;
 
-  root.querySelector('#csv-scope')?.addEventListener('change', (e) => {
-    csvScope = e.target.value;
-    renderWishlist(container, ctx);
-  });
-
   root.querySelector('#wishlist-sort')?.addEventListener('change', (e) => {
     wishlistSort = e.target.value;
     renderWishlist(container, ctx);
@@ -447,65 +314,6 @@ export function renderWishlist(container, ctx) {
       // ignore
     }
     renderWishlist(container, ctx);
-  });
-
-  root.querySelector('#btn-download-csv')?.addEventListener('click', () => {
-    const scopeBooks = getScopeBooks(store.data.books, csvScope);
-    const csv = exportPriceCheckCsv(scopeBooks);
-    downloadTextFile(`booklist_prices_${todayIso()}.csv`, csv, 'text/csv;charset=utf-8');
-    ctx.toast(`Downloaded ${scopeBooks.length} books for price checking`, 'ok');
-  });
-
-  const handleFile = async (file) => {
-    if (!file) return;
-    const text = await file.text();
-    const parsed = parsePriceCheckCsv(text, store.data.books);
-    if (parsed.error) {
-      ctx.toast(parsed.error, 'error');
-      return;
-    }
-    pendingPreview = { items: parsed.items, fileName: file.name };
-    renderWishlist(container, ctx);
-  };
-
-  const dropzone = root.querySelector('#csv-dropzone');
-  const fileInput = root.querySelector('#csv-file-input');
-  dropzone?.addEventListener('click', () => fileInput?.click());
-  dropzone?.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    dropzone.classList.add('dragover');
-  });
-  dropzone?.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
-  dropzone?.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dropzone.classList.remove('dragover');
-    handleFile(e.dataTransfer?.files?.[0]);
-  });
-  fileInput?.addEventListener('change', (e) => handleFile(e.target.files?.[0]));
-
-  root.querySelector('#btn-cancel-preview')?.addEventListener('click', () => {
-    pendingPreview = null;
-    renderWishlist(container, ctx);
-  });
-
-  root.querySelectorAll('[data-preview-idx]').forEach((cb) => {
-    cb.addEventListener('change', (e) => {
-      const idx = Number(e.target.dataset.previewIdx);
-      if (pendingPreview?.items[idx]) {
-        pendingPreview.items[idx].selected = e.target.checked;
-        renderWishlist(container, ctx);
-      }
-    });
-  });
-
-  root.querySelector('#btn-apply-csv')?.addEventListener('click', () => {
-    if (!pendingPreview) return;
-    const updates = pendingPreview.items
-      .filter((it) => it.selected && it.book && it.newPrice !== null)
-      .map((it) => ({ bookId: it.book.id, newPrice: it.newPrice }));
-    const count = store.applyPriceUpdates(updates);
-    pendingPreview = null;
-    ctx.toast(`Updated prices on ${count} book${count === 1 ? '' : 's'}`, 'ok');
   });
 
   // Bulk target price controls
@@ -545,11 +353,6 @@ export function renderWishlist(container, ctx) {
   });
 
   // Amazon Wishlist comparison
-  const detailsEl = root.querySelector('#amazon-compare-details');
-  detailsEl?.addEventListener('toggle', () => {
-    amazonCompareOpen = detailsEl.open;
-  });
-
   const runComparison = (raw) => {
     amazonRawInput = raw;
     const parsed = parseAmazonWishlistInput(raw);
@@ -558,7 +361,33 @@ export function renderWishlist(container, ctx) {
       return;
     }
     amazonParsedItems = parsed.items;
-    amazonCompareOpen = true;
+
+    const cmp = compareAmazonWishlist(amazonParsedItems, store.data.books);
+    if (cmp.priceChanges.length > 0) {
+      lastAutoPriceUpdates = cmp.priceChanges.map((p) => ({
+        title: p.book.title,
+        oldPrice: p.oldPrice,
+        newPrice: p.newPrice,
+        hitTarget:
+          p.book.target_price !== null &&
+          p.book.target_price !== undefined &&
+          p.newPrice <= p.book.target_price,
+      }));
+      const updates = cmp.priceChanges.map((p) => ({
+        bookId: p.book.id,
+        newPrice: p.newPrice,
+      }));
+      const count = store.applyPriceUpdates(updates);
+      const hits = lastAutoPriceUpdates.filter((u) => u.hitTarget).length;
+      ctx.toast(
+        `Updated ${count} price${count === 1 ? '' : 's'} automatically from Amazon${hits ? ` (${hits} hit target price!)` : ''}`,
+        'ok'
+      );
+      return;
+    }
+
+    lastAutoPriceUpdates = [];
+    ctx.toast('Comparison complete — all matched prices are already up to date.', 'ok');
     renderWishlist(container, ctx);
   };
 
@@ -570,27 +399,11 @@ export function renderWishlist(container, ctx) {
     runComparison(amazonRawInput);
   });
 
-  root.querySelector('#amz-html-input')?.addEventListener('change', async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const txt = await file.text();
-    runComparison(txt);
-  });
-
   root.querySelector('#btn-clear-amz-compare')?.addEventListener('click', () => {
     amazonRawInput = '';
     amazonParsedItems = null;
+    lastAutoPriceUpdates = [];
     renderWishlist(container, ctx);
-  });
-
-  root.querySelector('#btn-apply-amz-prices')?.addEventListener('click', () => {
-    if (!amazonComparison?.priceChanges?.length) return;
-    const updates = amazonComparison.priceChanges.map((p) => ({
-      bookId: p.book.id,
-      newPrice: p.newPrice,
-    }));
-    const count = store.applyPriceUpdates(updates);
-    ctx.toast(`Updated prices on ${count} book${count === 1 ? '' : 's'}`, 'ok');
   });
 
   root.querySelector('#btn-apply-amz-asins')?.addEventListener('click', () => {

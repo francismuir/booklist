@@ -1,6 +1,6 @@
 import { searchBookMetadata } from '../openlibrary.js';
 import { store } from '../store.js';
-import { amazonUrl, esc, formatDate, formatPrice, parseAmazonInput, todayIso } from '../utils.js';
+import { amazonUrl, esc, formatDate, formatPrice, getOrderedSeriesOptions, parseAmazonInput, todayIso } from '../utils.js';
 
 export function openBookModal(bookId = null, prefill = {}, onSaved = null, toast = () => {}) {
   const modalRoot = document.getElementById('modal-root');
@@ -33,7 +33,7 @@ export function openBookModal(bookId = null, prefill = {}, onSaved = null, toast
         ...prefill,
       };
 
-  const seriesList = store.data.series;
+  const orderedSeries = getOrderedSeriesOptions(store.data.series);
   const amzInputVal = book.amazon_asin || (book.amazon_legacy_code ? `https://amzn.eu/${book.amazon_legacy_code}` : '');
 
   modalRoot.innerHTML = `
@@ -113,12 +113,10 @@ export function openBookModal(bookId = null, prefill = {}, onSaved = null, toast
               <label class="form-label" for="f-series">Series</label>
               <select id="f-series" class="select">
                 <option value="">— None —</option>
-                ${seriesList
+                ${orderedSeries
                   .map(
-                    (s) =>
-                      `<option value="${esc(s.id)}" ${book.series_id === s.id ? 'selected' : ''}>${esc(
-                        s.parent_series_id ? `↳ ${s.name}` : s.name
-                      )}</option>`
+                    (opt) =>
+                      `<option value="${esc(opt.id)}" ${book.series_id === opt.id ? 'selected' : ''}>${esc(opt.label)}</option>`
                   )
                   .join('')}
                 <option value="__new__">+ Create New Series…</option>

@@ -157,3 +157,52 @@ export function sourceLabel(source) {
   };
   return map[source] || source || 'Kindle';
 }
+
+/** Order series hierarchically (parents alphabetically with sorted sub-series beneath them). */
+export function getOrderedSeriesOptions(seriesList) {
+  if (!Array.isArray(seriesList)) return [];
+  const byId = new Map(seriesList.map((s) => [s.id, s]));
+  const roots = [];
+  const childrenMap = new Map();
+
+  for (const s of seriesList) {
+    if (s.parent_series_id && s.parent_series_id !== s.id && byId.has(s.parent_series_id)) {
+      if (!childrenMap.has(s.parent_series_id)) childrenMap.set(s.parent_series_id, []);
+      childrenMap.get(s.parent_series_id).push(s);
+    } else {
+      roots.push(s);
+    }
+  }
+
+  const cmp = (a, b) =>
+    String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' });
+  roots.sort(cmp);
+  for (const list of childrenMap.values()) {
+    list.sort(cmp);
+  }
+
+  const result = [];
+  const visited = new Set();
+  const visit = (series, ancestors) => {
+    if (visited.has(series.id)) return;
+    visited.add(series.id);
+    const path = [...ancestors, series.name];
+    result.push({
+      series,
+      id: series.id,
+      name: series.name,
+      depth: ancestors.length,
+      label: path.join(' > '),
+    });
+    const children = childrenMap.get(series.id) || [];
+    for (const child of children) {
+      visit(child, path);
+    }
+  };
+
+  for (const root of roots) visit(root, []);
+  for (const s of [...seriesList].sort(cmp)) {
+    if (!visited.has(s.id)) visit(s, []);
+  }
+  return result;
+}

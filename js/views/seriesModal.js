@@ -23,7 +23,9 @@ function showModal(html, bindFn) {
 }
 
 export function openCreateSeriesModal(onCreated, toast = () => {}) {
-  const topSeries = store.data.series.filter((s) => !s.parent_series_id);
+  const topSeries = store.data.series
+    .filter((s) => !s.parent_series_id)
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }));
 
   const html = `
     <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="series-modal-title">
