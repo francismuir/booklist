@@ -322,6 +322,59 @@ class LibraryStore extends EventTarget {
     return count;
   }
 
+  deleteSeries(seriesId, bookIdsToDelete = []) {
+    if (!seriesId) return { deletedSeriesCount: 0, deletedBooksCount: 0, keptBooksCount: 0, deletedSeriesIds: [] };
+
+    const targetSeriesIds = new Set([seriesId]);
+    let added = true;
+    while (added) {
+      added = false;
+      for (const s of this.data.series) {
+        if (s.parent_series_id && targetSeriesIds.has(s.parent_series_id) && !targetSeriesIds.has(s.id)) {
+          targetSeriesIds.add(s.id);
+          added = true;
+        }
+      }
+    }
+
+    const beforeSeriesCount = this.data.series.length;
+    this.data.series = this.data.series.filter((s) => !targetSeriesIds.has(s.id));
+    const deletedSeriesCount = beforeSeriesCount - this.data.series.length;
+
+    const deleteSet = new Set(bookIdsToDelete);
+    let deletedBooksCount = 0;
+    let keptBooksCount = 0;
+    const nextBooks = [];
+
+    for (const b of this.data.books) {
+      if (b.series_id && targetSeriesIds.has(b.series_id)) {
+        if (deleteSet.has(b.id)) {
+          deletedBooksCount += 1;
+          continue;
+        }
+        b.series_id = null;
+        b.series_order = null;
+        if (b.list_scope === 'series_backlog') {
+          b.list_scope = 'library';
+        }
+        keptBooksCount += 1;
+      }
+      nextBooks.push(b);
+    }
+
+    this.data.books = nextBooks;
+    if (deletedSeriesCount > 0 || deletedBooksCount > 0 || keptBooksCount > 0) {
+      this.persistLocal(true);
+    }
+
+    return {
+      deletedSeriesCount,
+      deletedBooksCount,
+      keptBooksCount,
+      deletedSeriesIds: [...targetSeriesIds],
+    };
+  }
+
   getAmazonWishlistUrl() {
     return this.data.meta?.amazon_wishlist_url || DEFAULT_AMAZON_WISHLIST_URL;
   }

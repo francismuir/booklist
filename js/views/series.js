@@ -1,6 +1,6 @@
 import { store } from '../store.js';
 import { amazonUrl, esc, formatPrice, statusLabel } from '../utils.js';
-import { openAttachBooksModal, openCreateSeriesModal } from './seriesModal.js';
+import { openAttachBooksModal, openCreateSeriesModal, openDeleteSeriesModal } from './seriesModal.js';
 
 const expandedSeries = new Set();
 let seriesQuery = '';
@@ -32,6 +32,7 @@ function renderSeriesTable(books, seriesObj) {
       <div style="display:flex;gap:0.4rem;flex-wrap:wrap">
         <button class="btn btn-xs" data-attach-to-series="${esc(seriesObj.id)}" type="button">+ Add Existing Books</button>
         <button class="btn btn-primary btn-xs" data-add-to-series="${esc(seriesObj.id)}" type="button">+ Add New Book</button>
+        <button class="btn btn-danger btn-xs" data-delete-series="${esc(seriesObj.id)}" type="button">Delete Series</button>
       </div>
     </div>
     ${
@@ -159,6 +160,14 @@ export function renderSeries(container, ctx) {
             ? `<div class="series-body">
                 ${ownBooks.length || !children.length ? renderSeriesTable(ownBooks, s) : ''}
                 ${
+                  children.length && !ownBooks.length
+                    ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;flex-wrap:wrap;gap:0.5rem">
+                        <div class="muted" style="font-size:0.86rem">${children.length} sub-series in ${esc(s.name)}</div>
+                        <button class="btn btn-danger btn-xs" data-delete-series="${esc(s.id)}" type="button">Delete Series (+ ${children.length} Sub-Series)</button>
+                      </div>`
+                    : ''
+                }
+                ${
                   children.length
                     ? `<div class="subseries-indent">
                         ${children.map((c) => renderCard(c)).join('')}
@@ -249,6 +258,20 @@ export function renderSeries(container, ctx) {
     if (attachBtn) {
       const sid = attachBtn.dataset.attachToSeries;
       openAttachBooksModal(sid, () => renderSeries(container, ctx), ctx.toast);
+      return;
+    }
+
+    const deleteBtn = e.target.closest('[data-delete-series]');
+    if (deleteBtn) {
+      const sid = deleteBtn.dataset.deleteSeries;
+      openDeleteSeriesModal(
+        sid,
+        (res) => {
+          res.deletedSeriesIds.forEach((id) => expandedSeries.delete(id));
+          renderSeries(container, ctx);
+        },
+        ctx.toast
+      );
       return;
     }
 

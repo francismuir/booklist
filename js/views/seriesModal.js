@@ -1,5 +1,5 @@
 import { store } from '../store.js';
-import { esc, normText } from '../utils.js';
+import { esc, normText, statusLabel } from '../utils.js';
 
 function showModal(html, bindFn) {
   const modalRoot = document.getElementById('modal-root');
@@ -216,6 +216,175 @@ export function openAttachBooksModal(seriesId, onAttached, toast = () => {}) {
       close();
       toast(`Added ${count} book${count === 1 ? '' : 's'} to "${seriesObj.name}"`, 'ok');
       onAttached?.();
+    });
+  });
+}
+
+export function openDeleteSeriesModal(seriesId, onDeleted, toast = () => {}) {
+  const seriesMap = store.getSeriesMap();
+  const seriesObj = seriesMap.get(seriesId);
+  if (!seriesObj) return;
+
+  const targetIds = new Set([seriesId]);
+  let added = true;
+  while (added) {
+    added = false;
+    for (const s of store.data.series) {
+      if (s.parent_series_id && targetIds.has(s.parent_series_id) && !targetIds.has(s.id)) {
+        targetIds.add(s.id);
+        added = true;
+      }
+    }
+  }
+
+  const childSeries = store.data.series
+    .filter((s) => s.id !== seriesId && targetIds.has(s.id))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  const seriesBooks = store.data.books
+    .filter((b) => b.series_id && targetIds.has(b.series_id))
+    .sort((a, b) => {
+      if (childSeries.length) {
+        const sa = seriesMap.get(a.series_id)?.name || '';
+        const sb = seriesMap.get(b.series_id)?.name || '';
+        const scmp = sa.localeCompare(sb);
+        if (scmp !== 0) return scmp;
+      }
+      return (a.series_order ?? 9999) - (b.series_order ?? 9999) || a.title.localeCompare(b.title);
+    });
+
+  // All books in the series are selected for deletion by default; user unchecks books to keep.
+  const selectedToDelete = new Set(seriesBooks.map((b) => b.id));
+
+  const html = `
+    <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-series-title">
+      <div class="modal-header">
+        <h2 id="delete-series-title">Delete Series "${esc(seriesObj.name)}"</h2>
+        <button id="modal-close" class="btn btn-ghost btn-sm" type="button" aria-label="Close">✕</button>
+      </div>
+      <div class="modal-body">
+        ${
+          childSeries.length
+            ? `<div style="margin-bottom:0.8rem;padding:0.65rem 0.85rem;border:1px solid var(--danger);border-radius:8px;background:var(--danger-soft);color:var(--danger);font-size:0.88rem">
+                <strong>Warning:</strong> Deleting <strong>${esc(seriesObj.name)}</strong> will also delete ${childSeries.length} sub-series:
+                ${childSeries.map((c) => esc(c.name)).join(', ')}.
+              </div>`
+            : ''
+        }
+
+        ${
+          seriesBooks.length
+            ? `<p style="margin-top:0;font-size:0.9rem">
+                Select the books to <strong>delete</strong> from your Book List. Any unselected books will be <strong>kept</strong> with their series tag removed.
+              </p>
+              <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.5rem;margin-bottom:0.6rem">
+                <div style="display:flex;gap:0.4rem">
+                  <button id="btn-del-select-all" class="btn btn-xs" type="button">Select All</button>
+                  <button id="btn-del-unselect-all" class="btn btn-xs" type="button">Unselect All</button>
+                </div>
+                <div id="del-series-summary" class="muted" style="font-size:0.85rem"></div>
+              </div>
+              <div id="del-series-list" class="table-wrap" style="max-height:48vh;overflow-y:auto">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Delete</th>
+                      ${childSeries.length ? '<th>Sub-Series</th>' : ''}
+                      <th>#</th>
+                      <th>Title &amp; Author</th>
+                      <th>Owned</th>
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${seriesBooks
+                      .map((b) => {
+                        const sName = seriesMap.get(b.series_id)?.name || '';
+                        return `<tr>
+                          <td><input type="checkbox" data-del-book="${esc(b.id)}" checked /></td>
+                          ${childSeries.length ? `<td class="muted" style="font-size:0.82rem">${esc(sName)}</td>` : ''}
+                          <td class="mono">${b.series_order ?? '—'}</td>
+                          <td>
+                            <strong>${esc(b.title)}</strong>
+                            <div class="muted" style="font-size:0.8rem">${esc(b.author)}</div>
+                          </td>
+                          <td>${b.ownership === 'owned' ? '<span class="badge badge-owned">Owned</span>' : '<span class="badge badge-wishlist">Wishlist</span>'}</td>
+                          <td><span class="badge badge-${esc(b.status)}">${esc(statusLabel(b.status))}</span></td>
+                        </tr>`;
+                      })
+                      .join('')}
+                  </tbody>
+                </table>
+              </div>`
+            : `<p class="muted" style="margin:0">This ${childSeries.length ? 'series and its sub-series contain' : 'series contains'} no books.</p>`
+        }
+      </div>
+      <div class="modal-footer">
+        <div class="muted" style="font-size:0.82rem">Unchecked books stay in your main Book List.</div>
+        <div style="display:flex;gap:0.5rem">
+          <button id="btn-cancel-modal" class="btn" type="button">Cancel</button>
+          <button id="btn-confirm-del-series" class="btn btn-danger" type="button"></button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  showModal(html, (modalRoot, close) => {
+    const summaryEl = modalRoot.querySelector('#del-series-summary');
+    const confirmBtn = modalRoot.querySelector('#btn-confirm-del-series');
+    const listEl = modalRoot.querySelector('#del-series-list');
+
+    const updateUi = () => {
+      const delCount = selectedToDelete.size;
+      const keepCount = seriesBooks.length - delCount;
+      if (summaryEl) {
+        summaryEl.textContent = `${delCount} selected to delete · ${keepCount} will be kept with series tag removed`;
+      }
+      if (seriesBooks.length === 0) {
+        confirmBtn.textContent = childSeries.length ? 'Delete Series & Sub-Series' : 'Delete Series';
+      } else if (delCount === 0) {
+        confirmBtn.textContent = 'Delete Series (Keep All Books)';
+      } else {
+        confirmBtn.textContent = `Delete Series & ${delCount} Book${delCount === 1 ? '' : 's'}`;
+      }
+    };
+
+    const syncCheckboxes = () => {
+      modalRoot.querySelectorAll('[data-del-book]').forEach((cb) => {
+        cb.checked = selectedToDelete.has(cb.dataset.delBook);
+      });
+      updateUi();
+    };
+
+    updateUi();
+
+    listEl?.addEventListener('change', (e) => {
+      const cb = e.target.closest('[data-del-book]');
+      if (!cb) return;
+      if (cb.checked) selectedToDelete.add(cb.dataset.delBook);
+      else selectedToDelete.delete(cb.dataset.delBook);
+      updateUi();
+    });
+
+    modalRoot.querySelector('#btn-del-select-all')?.addEventListener('click', () => {
+      seriesBooks.forEach((b) => selectedToDelete.add(b.id));
+      syncCheckboxes();
+    });
+
+    modalRoot.querySelector('#btn-del-unselect-all')?.addEventListener('click', () => {
+      selectedToDelete.clear();
+      syncCheckboxes();
+    });
+
+    confirmBtn.addEventListener('click', () => {
+      const res = store.deleteSeries(seriesId, [...selectedToDelete]);
+      close();
+      const parts = [`Deleted "${seriesObj.name}"`];
+      if (res.deletedSeriesCount > 1) parts.push(`(+${res.deletedSeriesCount - 1} sub-series)`);
+      if (res.deletedBooksCount > 0) parts.push(`${res.deletedBooksCount} book${res.deletedBooksCount === 1 ? '' : 's'} removed`);
+      if (res.keptBooksCount > 0) parts.push(`${res.keptBooksCount} kept without series tag`);
+      toast(parts.join(' · '), 'ok');
+      onDeleted?.(res);
     });
   });
 }
