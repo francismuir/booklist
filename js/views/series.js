@@ -4,14 +4,24 @@ import { openAttachBooksModal, openCreateSeriesModal, openDeleteSeriesModal } fr
 
 const expandedSeries = new Set();
 let seriesQuery = '';
-let seriesFilter = 'all'; // 'all' | 'in_progress' | 'to_buy'
+let seriesFilter = 'all'; // 'all' | 'in_progress' | 'to_buy' | 'no_unread_main'
+
+function isUnreadBook(b) {
+  return b.status !== 'read' && b.status !== 'abandoned';
+}
+
+function hasNoUnreadOnMainBookList(books) {
+  const hasAnyUnread = books.some((b) => isUnreadBook(b));
+  if (!hasAnyUnread) return false;
+  return !books.some((b) => isUnreadBook(b) && b.list_scope === 'library');
+}
 
 function seriesStats(books) {
   const total = books.length;
   const read = books.filter((b) => b.status === 'read').length;
   const owned = books.filter((b) => b.ownership === 'owned').length;
   const sorted = [...books].sort((a, b) => (a.series_order ?? 9999) - (b.series_order ?? 9999));
-  const nextBook = sorted.find((b) => b.status !== 'read' && b.status !== 'abandoned') || null;
+  const nextBook = sorted.find((b) => isUnreadBook(b)) || null;
   const pct = total ? Math.round((read / total) * 100) : 0;
   return { total, read, owned, sorted, nextBook, pct };
 }
@@ -119,19 +129,41 @@ export function renderSeries(container, ctx) {
 
   const q = seriesQuery.trim().toLowerCase();
 
+  const matchesFilter = (s) => {
+    const children = childrenMap.get(s.id) || [];
+    const ownBooks = bySeries.get(s.id) || [];
+    if (seriesFilter === 'all') return true;
+    if (seriesFilter === 'no_unread_main') {
+      if (children.length) {
+        return (ownBooks.length > 0 && hasNoUnreadOnMainBookList(ownBooks)) || children.some((c) => matchesFilter(c));
+      }
+      return hasNoUnreadOnMainBookList(ownBooks);
+    }
+    const aggregateBooks = [...ownBooks, ...children.flatMap((c) => bySeries.get(c.id) || [])];
+    const stats = seriesStats(aggregateBooks);
+    if (seriesFilter === 'in_progress') return stats.total > 0 && stats.read < stats.total;
+    if (seriesFilter === 'to_buy') return stats.total > 0 && stats.owned < stats.total;
+    return true;
+  };
+
   const renderCard = (s) => {
     const children = childrenMap.get(s.id) || [];
     const ownBooks = bySeries.get(s.id) || [];
     const aggregateBooks = [...ownBooks, ...children.flatMap((c) => bySeries.get(c.id) || [])];
 
     const stats = seriesStats(aggregateBooks);
-    if (seriesFilter === 'in_progress' && (stats.total === 0 || stats.read === stats.total)) return '';
-    if (seriesFilter === 'to_buy' && (stats.total === 0 || stats.owned === stats.total)) return '';
+    if (!matchesFilter(s)) return '';
 
     if (q) {
       const hay = `${s.name} ${s.author_default || ''} ${aggregateBooks.map((b) => `${b.title} ${b.author}`).join(' ')} ${children.map((c) => c.name).join(' ')}`.toLowerCase();
       if (!hay.includes(q)) return '';
     }
+
+    const visibleChildren = children.filter((c) => matchesFilter(c));
+    const subCountText =
+      visibleChildren.length !== children.length
+        ? `${visibleChildren.length} of ${children.length} sub-series`
+        : `${children.length} sub-series`;
 
     const isOpen = expandedSeries.has(s.id);
     const authorLabel = s.author_default || aggregateBooks[0]?.author || '';
@@ -142,7 +174,7 @@ export function renderSeries(container, ctx) {
           <div>
             <div style="font-weight:700;font-size:1.02rem">
               ${isOpen ? '▾' : '▸'} ${esc(s.name)}
-              ${children.length ? `<span class="badge badge-unread" style="margin-left:0.35rem">${children.length} sub-series</span>` : ''}
+              ${children.length ? `<span class="badge badge-unread" style="margin-left:0.35rem">${subCountText}</span>` : ''}
             </div>
             <div class="muted" style="font-size:0.84rem">
               ${esc(authorLabel)}${stats.nextBook && !children.length ? ` · Next: #${stats.nextBook.series_order ?? '?'} ${esc(stats.nextBook.title)}` : !stats.total && !children.length ? ' · Empty series' : ''}
@@ -165,15 +197,15 @@ export function renderSeries(container, ctx) {
                 ${
                   children.length && !ownBooks.length
                     ? `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:0.5rem;flex-wrap:wrap;gap:0.5rem">
-                        <div class="muted" style="font-size:0.86rem">${children.length} sub-series in ${esc(s.name)}</div>
+                        <div class="muted" style="font-size:0.86rem">${subCountText} in ${esc(s.name)}</div>
                         <button class="btn btn-danger btn-xs" data-delete-series="${esc(s.id)}" type="button">Delete Series (+ ${children.length} Sub-Series)</button>
                       </div>`
                     : ''
                 }
                 ${
-                  children.length
+                  visibleChildren.length
                     ? `<div class="subseries-indent">
-                        ${children.map((c) => renderCard(c)).join('')}
+                        ${visibleChildren.map((c) => renderCard(c)).join('')}
                       </div>`
                     : ''
                 }
@@ -205,6 +237,7 @@ export function renderSeries(container, ctx) {
         <option value="all" ${seriesFilter === 'all' ? 'selected' : ''}>All Series</option>
         <option value="in_progress" ${seriesFilter === 'in_progress' ? 'selected' : ''}>Incomplete (Unread remaining)</option>
         <option value="to_buy" ${seriesFilter === 'to_buy' ? 'selected' : ''}>Has Unowned Books</option>
+        <option value="no_unread_main" ${seriesFilter === 'no_unread_main' ? 'selected' : ''}>No Unread on Main Book List</option>
       </select>
     </div>
 
