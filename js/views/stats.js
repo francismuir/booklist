@@ -232,15 +232,20 @@ export function renderStats(container, ctx) {
           missingPubYear.length
             ? missingPubYear
                 .slice(0, 80)
-                .map(
-                  (b) => `<div style="display:flex;justify-content:space-between;align-items:center;padding:0.35rem 0;border-bottom:1px solid var(--border);font-size:0.86rem">
+                .map((b) => {
+                  const directUrl = amazonUrl(b);
+                  const amzHref =
+                    directUrl ||
+                    `https://www.amazon.co.uk/s?k=${encodeURIComponent(`${b.title || ''} ${b.author || ''}`.trim())}`;
+                  return `<div style="display:flex;justify-content:space-between;align-items:center;padding:0.35rem 0;border-bottom:1px solid var(--border);font-size:0.86rem">
                     <span>${esc(b.author)} — <strong>${esc(b.title)}</strong></span>
                     <span style="white-space:nowrap">
                       <button class="btn btn-xs" data-lookup-pub="${esc(b.id)}">Lookup Year</button>
+                      <a class="btn btn-xs" href="${esc(amzHref)}" target="_blank" rel="noopener" title="${esc(directUrl ? 'Open Amazon UK book page' : 'Search for this book on Amazon UK')}">Amazon ↗</a>
                       <button class="btn btn-ghost btn-xs" data-edit-book="${esc(b.id)}">Edit</button>
                     </span>
-                  </div>`
-                )
+                  </div>`;
+                })
                 .join('')
             : `<div class="muted">Every book has a publication year!</div>`
         }
