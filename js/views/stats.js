@@ -237,12 +237,23 @@ export function renderStats(container, ctx) {
                   const amzHref =
                     directUrl ||
                     `https://www.amazon.co.uk/s?k=${encodeURIComponent(`${b.title || ''} ${b.author || ''}`.trim())}`;
-                  return `<div style="display:flex;justify-content:space-between;align-items:center;padding:0.35rem 0;border-bottom:1px solid var(--border);font-size:0.86rem">
+                  return `<div style="display:flex;justify-content:space-between;align-items:center;padding:0.35rem 0;border-bottom:1px solid var(--border);font-size:0.86rem;gap:0.5rem">
                     <span>${esc(b.author)} — <strong>${esc(b.title)}</strong></span>
-                    <span style="white-space:nowrap">
+                    <span style="white-space:nowrap;display:inline-flex;align-items:center;gap:0.35rem">
                       <button class="btn btn-xs" data-lookup-pub="${esc(b.id)}">Lookup Year</button>
                       <a class="btn btn-xs" href="${esc(amzHref)}" target="_blank" rel="noopener" title="${esc(directUrl ? 'Open Amazon UK book page' : 'Search for this book on Amazon UK')}">Amazon ↗</a>
-                      <button class="btn btn-ghost btn-xs" data-edit-book="${esc(b.id)}">Edit</button>
+                      <input
+                        class="input"
+                        type="number"
+                        min="1400"
+                        max="2100"
+                        step="1"
+                        placeholder="Year"
+                        aria-label="Publication year for ${esc(b.title)}"
+                        data-pubyear-input="${esc(b.id)}"
+                        style="width:78px;padding:0.2rem 0.4rem;font-size:0.82rem"
+                      />
+                      <button class="btn btn-primary btn-xs" type="button" data-save-pubyear="${esc(b.id)}">Update</button>
                     </span>
                   </div>`;
                 })
@@ -255,11 +266,40 @@ export function renderStats(container, ctx) {
 
   const root = container.firstElementChild;
 
+  const saveInlinePubYear = (id) => {
+    const inp = [...root.querySelectorAll('[data-pubyear-input]')].find((el) => el.dataset.pubyearInput === id);
+    const raw = inp?.value.trim() || '';
+    const year = Number(raw);
+    if (!/^\d{4}$/.test(raw) || year < 1400 || year > 2100) {
+      ctx.toast('Enter a valid 4-digit publication year (1400–2100).', 'error');
+      inp?.focus();
+      return;
+    }
+    const b = store.getBook(id);
+    if (!b) return;
+    store.saveBook({ pub_year: year, pub_year_source: 'manual', pub_year_confidence: 'exact' }, id);
+    ctx.toast(`Saved ${year} for "${b.title}"`, 'ok');
+  };
+
+  root.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const inp = e.target.closest('[data-pubyear-input]');
+    if (!inp) return;
+    e.preventDefault();
+    saveInlinePubYear(inp.dataset.pubyearInput);
+  });
+
   root.addEventListener('click', async (e) => {
     const editEl = e.target.closest('[data-edit-book]');
     if (editEl) {
       e.preventDefault();
       ctx.openBookModal(editEl.dataset.editBook);
+      return;
+    }
+
+    const saveBtn = e.target.closest('[data-save-pubyear]');
+    if (saveBtn) {
+      saveInlinePubYear(saveBtn.dataset.savePubyear);
       return;
     }
 
