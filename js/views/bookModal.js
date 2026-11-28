@@ -151,7 +151,7 @@ export function openBookModal(bookId = null, prefill = {}, onSaved = null, toast
               <label class="form-label" for="f-scope">Visibility Scope</label>
               <select id="f-scope" class="select">
                 <option value="library" ${book.list_scope === 'library' ? 'selected' : ''}>Main Book List</option>
-                <option value="series_backlog" ${book.list_scope === 'series_backlog' ? 'selected' : ''}>Series Backlog Only</option>
+                <option value="series_backlog" ${book.list_scope === 'series_backlog' ? 'selected' : ''}>Series Only (Not on Book List)</option>
               </select>
             </div>
 
@@ -249,9 +249,17 @@ export function openBookModal(bookId = null, prefill = {}, onSaved = null, toast
     if (e.target === modalRoot) close();
   });
 
-  // Series select -> show new series input
+  // Series select -> show new series input & auto-adjust default visibility for new books
   const seriesSel = modalRoot.querySelector('#f-series');
   const newSeriesInp = modalRoot.querySelector('#f-new-series');
+  const statusSel = modalRoot.querySelector('#f-status');
+  const dateReadInp = modalRoot.querySelector('#f-date-read');
+  const scopeSel = modalRoot.querySelector('#f-scope');
+  let scopeTouched = false;
+  scopeSel?.addEventListener('change', () => {
+    scopeTouched = true;
+  });
+
   seriesSel?.addEventListener('change', () => {
     if (seriesSel.value === '__new__') {
       newSeriesInp.classList.remove('hidden');
@@ -259,14 +267,16 @@ export function openBookModal(bookId = null, prefill = {}, onSaved = null, toast
     } else {
       newSeriesInp.classList.add('hidden');
     }
+    if (!existing && !scopeTouched && scopeSel) {
+      scopeSel.value = seriesSel.value !== '' && statusSel.value !== 'read' ? 'series_backlog' : 'library';
+    }
   });
 
-  // Status -> Read auto-populates today's date if blank
-  const statusSel = modalRoot.querySelector('#f-status');
-  const dateReadInp = modalRoot.querySelector('#f-date-read');
+  // Status -> Read auto-populates today's date if blank and moves to Main Book List
   statusSel?.addEventListener('change', () => {
-    if (statusSel.value === 'read' && !dateReadInp.value) {
-      dateReadInp.value = todayIso();
+    if (statusSel.value === 'read') {
+      if (!dateReadInp.value) dateReadInp.value = todayIso();
+      if (scopeSel) scopeSel.value = 'library';
     }
   });
 
@@ -377,7 +387,7 @@ export function openBookModal(bookId = null, prefill = {}, onSaved = null, toast
       amazon_legacy_code: parsedAmz.legacy,
       current_price: priceRaw === '' ? null : Math.round(Number(priceRaw) * 100) / 100,
       target_price: targetRaw === '' ? null : Math.round(Number(targetRaw) * 100) / 100,
-      list_scope: modalRoot.querySelector('#f-scope').value,
+      list_scope: !seriesId || statusSel.value === 'read' ? 'library' : scopeSel.value,
       category: modalRoot.querySelector('#f-category').value.trim() || null,
       recommended_by: modalRoot.querySelector('#f-rec').value.trim() || null,
       lent_to: modalRoot.querySelector('#f-lent').value.trim() || null,

@@ -415,6 +415,9 @@ class LibraryStore extends EventTarget {
       if (idx === -1) throw new Error('Book not found');
       const prev = this.data.books[idx];
       const next = { ...prev, ...payload };
+      if (next.status === 'read' || !next.series_id) {
+        next.list_scope = 'library';
+      }
 
       if (payload.current_price !== undefined && payload.current_price !== prev.current_price && payload.current_price !== null) {
         next.price_checked_at = now;
@@ -425,6 +428,8 @@ class LibraryStore extends EventTarget {
       return next;
     }
 
+    const defaultScope =
+      payload?.series_id && payload?.status !== 'read' ? 'series_backlog' : 'library';
     const created = {
       id: generateId('bk'),
       title: '',
@@ -433,7 +438,7 @@ class LibraryStore extends EventTarget {
       pub_year_source: 'manual',
       pub_year_confidence: 'exact',
       is_factual: false,
-      list_scope: 'library',
+      list_scope: defaultScope,
       ownership: 'not_owned',
       source: 'kindle',
       status: 'unread',
@@ -454,6 +459,9 @@ class LibraryStore extends EventTarget {
       notes: '',
       ...payload,
     };
+    if (created.status === 'read' || !created.series_id) {
+      created.list_scope = 'library';
+    }
     if (created.current_price !== null && created.current_price !== undefined) {
       created.price_checked_at = now;
       created.price_history = [{ price: created.current_price, checked_at: now }];
@@ -525,7 +533,6 @@ class LibraryStore extends EventTarget {
     const b = this.getBook(id);
     if (!b) return;
     b.ownership = 'owned';
-    b.list_scope = 'library';
     this.persistLocal(true);
   }
 
@@ -534,6 +541,14 @@ class LibraryStore extends EventTarget {
     if (!b) return;
     b.list_scope = 'library';
     this.persistLocal(true);
+  }
+
+  removeFromLibrary(id) {
+    const b = this.getBook(id);
+    if (!b || !b.series_id || b.status === 'read') return false;
+    b.list_scope = 'series_backlog';
+    this.persistLocal(true);
+    return true;
   }
 
   applyPriceUpdates(updates) {

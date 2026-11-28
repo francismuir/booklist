@@ -372,7 +372,6 @@ def apply_bulk_update(
                 match["pub_year_confidence"] = "exact"
             if entry["owned"] and match.get("ownership") != "owned":
                 match["ownership"] = "owned"
-                match["list_scope"] = "library"
             if entry["notes"] and entry["notes"] not in (match.get("notes") or ""):
                 match["notes"] = "; ".join([x for x in [match.get("notes"), entry["notes"]] if x])
             matched_updates.append(
@@ -390,7 +389,7 @@ def apply_bulk_update(
                 max_order_by_series[target_series_id] = max(max_order_by_series[target_series_id], float(order_val))
 
         ownership = "owned" if entry["owned"] else "not_owned"
-        list_scope = "library" if (ownership == "owned" or not target_series_id) else "series_backlog"
+        list_scope = "library" if (not target_series_id or entry["status"] == "read") else "series_backlog"
 
         new_book = {
             "id": f"bk_{next_num:04d}",

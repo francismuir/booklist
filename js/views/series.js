@@ -71,7 +71,13 @@ function renderSeriesTable(books, seriesObj) {
                       <td>
                         <strong>${esc(b.title)}</strong>
                         ${isNext ? `<span class="badge badge-up_next" style="margin-left:0.35rem">Next</span>` : ''}
-                        ${b.list_scope === 'series_backlog' ? `<span class="badge badge-unread" style="margin-left:0.25rem">Backlog</span>` : ''}
+                        ${
+                          b.list_scope === 'series_backlog'
+                            ? `<span class="badge badge-unread" style="margin-left:0.25rem">Backlog</span>`
+                            : b.status !== 'read'
+                              ? `<span class="badge badge-owned" style="margin-left:0.25rem">Book List</span>`
+                              : ''
+                        }
                       </td>
                       <td>${esc(b.author)}</td>
                       <td class="num">${b.pub_year ?? '—'}</td>
@@ -86,7 +92,13 @@ function renderSeriesTable(books, seriesObj) {
                         }
                         ${b.status !== 'read' ? `<button class="btn btn-ok btn-xs" data-action="finish" data-id="${esc(b.id)}">Read</button>` : ''}
                         ${b.status === 'unread' ? `<button class="btn btn-xs" data-action="start" data-id="${esc(b.id)}">Reading</button>` : ''}
-                        ${b.list_scope === 'series_backlog' ? `<button class="btn btn-xs" data-action="promote" data-id="${esc(b.id)}" title="Add to main Book List">Add</button>` : ''}
+                        ${
+                          b.list_scope === 'series_backlog'
+                            ? `<button class="btn btn-xs" data-action="promote" data-id="${esc(b.id)}" title="Add to main Book List">Add</button>`
+                            : b.status !== 'read'
+                              ? `<button class="btn btn-xs" data-action="demote" data-id="${esc(b.id)}" title="Remove from main Book List (keep in Series)">Remove</button>`
+                              : ''
+                        }
                         ${amz ? `<a class="btn btn-xs" href="${esc(amz)}" target="_blank" rel="noopener">Kindle ↗</a>` : ''}
                         <button class="btn btn-ghost btn-xs" data-action="edit" data-id="${esc(b.id)}">Edit</button>
                       </td>
@@ -331,7 +343,7 @@ export function renderSeries(container, ctx) {
     const { action, id } = actionBtn.dataset;
     if (action === 'owned') {
       store.markOwned(id);
-      ctx.toast('Marked as owned & added to Book List', 'ok');
+      ctx.toast('Marked as owned', 'ok');
     } else if (action === 'finish') {
       store.markRead(id);
       ctx.toast('Marked as read', 'ok');
@@ -341,6 +353,9 @@ export function renderSeries(container, ctx) {
     } else if (action === 'promote') {
       store.promoteToLibrary(id);
       ctx.toast('Added to Book List', 'ok');
+    } else if (action === 'demote') {
+      store.removeFromLibrary(id);
+      ctx.toast('Removed from Book List (kept in Series)', 'ok');
     } else if (action === 'edit') {
       ctx.openBookModal(id);
     }

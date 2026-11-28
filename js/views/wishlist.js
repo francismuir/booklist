@@ -187,7 +187,7 @@ export function renderWishlist(container, ctx) {
                                           <td class="num">${formatPrice(it.price)}</td>
                                           <td style="white-space:nowrap">
                                             ${
-                                              ex && ex.list_scope === 'series_backlog'
+                                              ex && ex.ownership !== 'owned' && ex.list_scope === 'series_backlog'
                                                 ? `<button class="btn btn-xs" data-promote-id="${esc(ex.id)}" title="Add to main Book List">Add</button>`
                                                 : !ex
                                                   ? `<button class="btn btn-primary btn-xs" data-add-amz-idx="${idx}">+ Add</button>`

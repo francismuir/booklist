@@ -99,7 +99,7 @@ export function renderBooks(container, ctx) {
   const qNorm = normText(filterState.q);
 
   const filtered = allBooks.filter((b) => {
-    if (!filterState.includeBacklog && b.list_scope === 'series_backlog') return false;
+    if (!filterState.includeBacklog && b.list_scope === 'series_backlog' && b.status !== 'read') return false;
     if (filterState.status !== 'all' && b.status !== filterState.status) return false;
     if (filterState.ownership !== 'all' && b.ownership !== filterState.ownership) return false;
     if (filterState.type === 'factual' && !b.is_factual) return false;
@@ -296,6 +296,13 @@ export function renderBooks(container, ctx) {
                         }
                         ${b.status === 'unread' || b.status === 'up_next' ? `<button class="btn btn-xs" data-action="start" data-id="${esc(b.id)}">Read Now</button>` : ''}
                         ${b.status === 'reading' ? `<button class="btn btn-ok btn-xs" data-action="finish" data-id="${esc(b.id)}">Finish</button>` : ''}
+                        ${
+                          b.series_id && b.list_scope === 'library' && b.status !== 'read'
+                            ? `<button class="btn btn-xs" type="button" data-action="remove-from-list" data-id="${esc(b.id)}" title="Remove from main Book List (keep in Series)">Remove</button>`
+                            : b.series_id && b.list_scope === 'series_backlog' && b.status !== 'read'
+                              ? `<button class="btn btn-xs" type="button" data-action="promote" data-id="${esc(b.id)}" title="Add to main Book List">Add</button>`
+                              : ''
+                        }
                         ${amz ? `<a class="btn btn-xs" href="${esc(amz)}" target="_blank" rel="noopener">Kindle ↗</a>` : ''}
                         <button class="btn btn-ghost btn-xs" data-action="edit" data-id="${esc(b.id)}">Edit</button>
                       </td>
@@ -403,6 +410,12 @@ export function renderBooks(container, ctx) {
     } else if (action === 'finish') {
       store.markRead(id);
       ctx.toast('Marked as read', 'ok');
+    } else if (action === 'remove-from-list') {
+      store.removeFromLibrary(id);
+      ctx.toast('Removed from Book List (kept in Series)', 'ok');
+    } else if (action === 'promote') {
+      store.promoteToLibrary(id);
+      ctx.toast('Added to Book List', 'ok');
     } else if (action === 'edit') {
       ctx.openBookModal(id);
     }
